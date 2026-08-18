@@ -1,3 +1,4 @@
+import BC768Protocol
 import CoreBluetooth
 import Foundation
 
@@ -28,10 +29,19 @@ struct NamedUUID {
     let uuid: CBUUID
 }
 
+/// handshake コマンドでのみ必要になる値。Android HCI キャプチャ由来なので設定として外に出す。
+struct HandshakeConfig {
+    /// 0x0003 で送るクライアント識別子（36 文字の UUID 文字列）。
+    let clientID: String
+    /// 0x0010 で送る payload。
+    let sessionPayload: Data
+}
+
 struct Config {
     let service: NamedUUID
     let writeChars: [NamedUUID]
     let notifyChars: [NamedUUID]
+    let handshake: HandshakeConfig?
 
     var allCharacteristics: [NamedUUID] { writeChars + notifyChars }
 
@@ -45,6 +55,8 @@ struct Config {
 enum ConfigError: Error, CustomStringConvertible {
     case missing([ConfigKey], searchedPaths: [String])
     case invalidUUID(key: ConfigKey, value: String)
+    case missingHandshakeValue(keys: [String], searchedPaths: [String])
+    case invalidHex(key: String, value: String)
 
     var description: String {
         switch self {
@@ -61,13 +73,22 @@ enum ConfigError: Error, CustomStringConvertible {
             return text
         case let .invalidUUID(key, value):
             return "\(key.logicalName) (\(key.rawValue)) の値が UUID として解釈できません: \"\(value)\""
+        case let .missingHandshakeValue(keys, paths):
+            var text = "handshake に必要な設定が不足しています:\n"
+            for key in keys { text += "  - \(key)\n" }
+            text += "\n探索した設定ファイル:\n"
+            for path in paths { text += "  - \(path)\n" }
+            text += "\nこれらは Android HCI キャプチャから得た値です。docs/protocol.md を参照してください。"
+            return text
+        case let .invalidHex(key, value):
+            return "\(key) の値が hex として解釈できません: \"\(value)\""
         }
     }
 }
 
 enum ConfigLoader {
     /// 読み込み優先度: 環境変数 > 明示指定 .env > ./.env > ~/.config/bc768-probe/env
-    static func load(explicitPath: String?, requireCharacteristics: Bool) throws -> Config {
+    static func load(explicitPath: String?, requireCharacteristics: Bool, requireHandshake: Bool = false) throws -> Config {
         var searchedPaths: [String] = []
         var fileValues: [String: String] = [:]
 
@@ -110,12 +131,33 @@ enum ConfigLoader {
 
         let service = try uuid(.serviceUUID)
         guard requireCharacteristics else {
-            return Config(service: service, writeChars: [], notifyChars: [])
+            return Config(service: service, writeChars: [], notifyChars: [], handshake: nil)
         }
+
+        var handshake: HandshakeConfig?
+        if requireHandshake {
+            func value(_ key: String) -> String? {
+                let raw = ProcessInfo.processInfo.environment[key] ?? fileValues[key]
+                guard let raw, !raw.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+                return raw.trimmingCharacters(in: .whitespaces)
+            }
+            let clientIDKey = "BC768_CLIENT_ID"
+            let sessionKey = "BC768_CMD_0010_PAYLOAD"
+            let missingHandshake = [clientIDKey, sessionKey].filter { value($0) == nil }
+            guard missingHandshake.isEmpty else {
+                throw ConfigError.missingHandshakeValue(keys: missingHandshake, searchedPaths: searchedPaths)
+            }
+            guard let sessionPayload = Data(hexString: value(sessionKey)!) else {
+                throw ConfigError.invalidHex(key: sessionKey, value: value(sessionKey)!)
+            }
+            handshake = HandshakeConfig(clientID: value(clientIDKey)!, sessionPayload: sessionPayload)
+        }
+
         return Config(
             service: service,
             writeChars: [try uuid(.writeChar1), try uuid(.writeChar2)],
-            notifyChars: [try uuid(.notifyChar1), try uuid(.notifyChar2), try uuid(.notifyChar3)]
+            notifyChars: [try uuid(.notifyChar1), try uuid(.notifyChar2), try uuid(.notifyChar3)],
+            handshake: handshake
         )
     }
 

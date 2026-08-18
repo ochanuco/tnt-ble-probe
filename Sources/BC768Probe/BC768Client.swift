@@ -1,3 +1,4 @@
+import BC768Protocol
 import CoreBluetooth
 import Foundation
 
@@ -17,6 +18,16 @@ final class BC768Client: NSObject {
     private var isTerminating = false
     private var seenPeripherals: Set<UUID> = []
     private var pendingDescriptorDiscovery = 0
+
+    // handshake 用
+    private var reassembler = BC768Reassembler()
+    private var steps: [HandshakeStep] = []
+    private var stepIndex = 0
+    private var responseTimeoutItem: DispatchWorkItem?
+    private var activeWriteChar: NamedUUID?
+    private var triedWriteChars: Set<String> = []
+    private var nextSeq: UInt8 = 0x02
+    private var handshakeFinished = false
 
     init(config: Config, options: Options, queue: DispatchQueue) {
         self.config = config
@@ -154,7 +165,7 @@ extension BC768Client: CBCentralManagerDelegate {
 
         switch central.state {
         case .poweredOn:
-            if options.command == .probe, let known = resolveAlreadyKnownPeripheral() {
+            if options.command != .scan, let known = resolveAlreadyKnownPeripheral() {
                 connect(known)
             } else if options.peripheralID != nil, options.command == .scan {
                 Log.error("--id は probe コマンドでのみ使用できます")
@@ -203,7 +214,7 @@ extension BC768Client: CBCentralManagerDelegate {
             ("matchesServiceUUID", advertisedServices.contains(config.service.uuid) ? "true" : "false"),
         ], level: isNew ? .info : .debug)
 
-        guard options.command == .probe, target == nil else { return }
+        guard options.command != .scan, target == nil else { return }
         // 名前ではなく Service UUID で識別する。
         // --no-filter 時に Service UUID を広告しない機体は、--id 指定で接続する運用とする。
         let matches = advertisedServices.contains(config.service.uuid)
@@ -361,8 +372,12 @@ extension BC768Client: CBPeripheralDelegate {
         if error == nil, characteristic.isNotifying {
             subscribedCount += 1
             if subscribedCount == config.notifyChars.count {
-                Log.info("Phase 2: Notify 購読が \(subscribedCount) 件すべて有効になりました。")
-                Log.info("macOS の Pairing ダイアログが表示された場合は、そのまま操作してください（CLI は待機し続けます）。")
+                Log.info("Notify 購読が \(subscribedCount) 件すべて有効になりました。")
+                if options.command == .handshake {
+                    startHandshake(on: peripheral)
+                } else {
+                    Log.info("macOS の Pairing ダイアログが表示された場合は、そのまま操作してください（CLI は待機し続けます）。")
+                }
             }
         }
     }
@@ -393,6 +408,21 @@ extension BC768Client: CBPeripheralDelegate {
             ("dec", data.decimalBytes),
             ("ascii", data.asciiPreview),
         ], level: .debug)
+
+        guard let assembled = reassembler.append(data) else { return }
+        guard let (message, checksumValid) = BC768Message.decode(assembled) else {
+            Log.event("RX_MESSAGE_INVALID", [("raw", assembled.hexString)], level: .error)
+            return
+        }
+        Log.event("RX_MESSAGE", [
+            ("command", String(format: "0x%04X", message.command)),
+            ("length", String(message.payload.count)),
+            ("checksum", checksumValid ? "ok" : "INVALID"),
+            ("payload", message.payload.hexString),
+            ("ascii", message.payload.asciiPreview),
+        ], level: checksumValid ? .info : .error)
+
+        handleHandshakeResponse(message, on: peripheral)
     }
 }
 
@@ -491,6 +521,153 @@ private extension BC768Client {
         } else {
             Log.info("待機中。Notify を受信するとログに出力します。終了は Ctrl+C。")
         }
+    }
+}
+
+// MARK: - handshake
+
+extension BC768Client {
+    func startHandshake(on peripheral: CBPeripheral) {
+        guard let handshake = config.handshake else {
+            Log.error("handshake に必要な設定がありません。")
+            shutdown(exitCode: 2)
+            return
+        }
+        steps = HandshakeStep.sequence(with: handshake)
+        stepIndex = 0
+        reassembler.reset()
+
+        let candidate: NamedUUID?
+        switch options.writeChar {
+        case .auto, .write1: candidate = config.writeChars.first
+        case .write2: candidate = config.writeChars.count > 1 ? config.writeChars[1] : nil
+        }
+        guard let writeChar = candidate, discovered[writeChar.uuid] != nil else {
+            Log.error("送信先の Characteristic が見つかりません。")
+            shutdown(exitCode: 1)
+            return
+        }
+        activeWriteChar = writeChar
+        triedWriteChars = [writeChar.logicalName]
+
+        let maxLength = peripheral.maximumWriteValueLength(for: .withoutResponse)
+        Log.event("HANDSHAKE_START", [
+            ("writeChar", writeChar.logicalName),
+            ("uuid", writeChar.uuid.uuidString),
+            ("steps", steps.map(\.label).joined(separator: "→")),
+            ("fragmentSize", String(Self.fragmentSize)),
+            ("maxWriteValueLength", String(maxLength)),
+        ])
+        sendCurrentStep(on: peripheral)
+    }
+
+    private func sendCurrentStep(on peripheral: CBPeripheral) {
+        guard stepIndex < steps.count else { return }
+        let step = steps[stepIndex]
+        let encoded = step.message.encoded()
+        let seq: UInt8
+        if encoded.count > Self.fragmentSize - BC768Fragment.headerSize {
+            seq = nextSeq
+            nextSeq = nextSeq &+ 1
+        } else {
+            seq = 0x00
+        }
+        let fragments = BC768Fragment.split(encoded, seq: seq, maxPayload: Self.fragmentSize)
+
+        Log.event("TX_MESSAGE", [
+            ("step", step.label),
+            ("command", String(format: "0x%04X", step.message.command)),
+            ("expect", String(format: "0x%04X", step.expected)),
+            ("length", String(encoded.count)),
+            ("seq", String(format: "0x%02X", seq)),
+            ("fragments", String(fragments.count)),
+            ("hex", encoded.hexString),
+        ])
+
+        guard let writeChar = activeWriteChar, let characteristic = discovered[writeChar.uuid] else { return }
+        for (index, fragment) in fragments.enumerated() {
+            let delay = Self.fragmentInterval.milliseconds * index
+            queue.asyncAfter(deadline: .now() + .milliseconds(delay)) { [weak self] in
+                guard let self, !self.isTerminating else { return }
+                // 送信前に必ずログを残す（仕様書 15）。
+                Log.event("WRITE", [
+                    ("uuid", writeChar.uuid.uuidString),
+                    ("logical", writeChar.logicalName),
+                    ("type", "withoutResponse"),
+                    ("length", String(fragment.count)),
+                    ("hex", fragment.hexString),
+                ])
+                peripheral.writeValue(fragment, for: characteristic, type: .withoutResponse)
+            }
+        }
+        scheduleResponseTimeout(on: peripheral)
+    }
+
+    private func scheduleResponseTimeout(on peripheral: CBPeripheral) {
+        responseTimeoutItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self, !self.isTerminating, !self.handshakeFinished else { return }
+            self.handleResponseTimeout(on: peripheral)
+        }
+        responseTimeoutItem = item
+        queue.asyncAfter(deadline: .now() + options.responseTimeout, execute: item)
+    }
+
+    private func handleResponseTimeout(on peripheral: CBPeripheral) {
+        let step = steps[stepIndex]
+        Log.event("RESPONSE_TIMEOUT", [
+            ("step", step.label),
+            ("expected", String(format: "0x%04X", step.expected)),
+            ("writeChar", activeWriteChar?.logicalName),
+        ], level: .error)
+
+        // auto の場合、最初のステップに限りもう一方の Write Characteristic を試す。
+        guard options.writeChar == .auto, stepIndex == 0,
+              let alternative = config.writeChars.first(where: { !triedWriteChars.contains($0.logicalName) }),
+              discovered[alternative.uuid] != nil else {
+            Log.error("ハンドシェイクが進みませんでした。--write-char で送信先を切り替えて再試行してください。")
+            return
+        }
+        Log.info("応答がないため送信先を \(alternative.logicalName) へ切り替えて再試行します。")
+        activeWriteChar = alternative
+        triedWriteChars.insert(alternative.logicalName)
+        reassembler.reset()
+        sendCurrentStep(on: peripheral)
+    }
+
+    func handleHandshakeResponse(_ message: BC768Message, on peripheral: CBPeripheral) {
+        guard options.command == .handshake, stepIndex < steps.count, !handshakeFinished else { return }
+        let step = steps[stepIndex]
+        guard message.command == step.expected else {
+            Log.event("UNEXPECTED_RESPONSE", [
+                ("step", step.label),
+                ("expected", String(format: "0x%04X", step.expected)),
+                ("actual", String(format: "0x%04X", message.command)),
+            ], level: .error)
+            return
+        }
+        responseTimeoutItem?.cancel()
+        Log.event("STEP_OK", [
+            ("step", step.label),
+            ("command", String(format: "0x%04X", message.command)),
+            ("writeChar", activeWriteChar?.logicalName),
+        ])
+
+        stepIndex += 1
+        guard stepIndex < steps.count else {
+            handshakeFinished = true
+            Log.info("ハンドシェイクが最後まで成功しました（送信先 = \(activeWriteChar?.logicalName ?? "?")）。")
+            Log.info("以降の Notify も記録し続けます。終了は Ctrl+C。")
+            return
+        }
+        sendCurrentStep(on: peripheral)
+    }
+}
+
+private extension DispatchTimeInterval {
+    var milliseconds: Int {
+        if case let .milliseconds(value) = self { return value }
+        return 0
     }
 }
 

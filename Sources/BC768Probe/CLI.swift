@@ -3,6 +3,14 @@ import Foundation
 enum Command: String {
     case scan
     case probe
+    case handshake
+}
+
+/// handshake の送信先 Characteristic。実機で確かめるまで確定できないため選べるようにしてある。
+enum WriteCharSelection: String {
+    case auto
+    case write1
+    case write2
 }
 
 struct Options {
@@ -21,6 +29,10 @@ struct Options {
     var peripheralID: UUID?
     /// 接続後の待機秒数。0 で Ctrl+C まで待機。
     var waitSeconds: Double = 0
+    /// handshake の送信先。auto は WRITE_CHAR_1 を試し、応答がなければ WRITE_CHAR_2 へ切り替える。
+    var writeChar: WriteCharSelection = .auto
+    /// handshake の応答待ちタイムアウト秒。
+    var responseTimeout: Double = 3
 
     static let usage = """
     bc768-probe - TANITA BC-768 / macOS BLE Pairing 検証 CLI
@@ -29,8 +41,9 @@ struct Options {
       bc768-probe <command> [options]
 
     COMMANDS:
-      scan     BC-768 候補を探索して広告情報を表示する
-      probe    scan → connect → discover → subscribe → wait を実行する
+      scan       BC-768 候補を探索して広告情報を表示する
+      probe      scan → connect → discover → subscribe → wait を実行する
+      handshake  probe に続けて、HCI ログで確認済みのハンドシェイクを送る
 
     OPTIONS:
       --debug             DEBUG ログを有効にする
@@ -41,11 +54,15 @@ struct Options {
       --read-all          readable な Characteristic を read する (Write は行わない)
       --id <uuid>         scan を省略して指定 Peripheral 識別子へ直接接続する
       --wait <sec>        接続後の待機秒数 (既定 0 = Ctrl+C まで待機)
+      --write-char <sel>  handshake の送信先 (auto | write1 | write2、既定 auto)
+      --response-timeout <sec>
+                          handshake の応答待ちタイムアウト (既定 3)
       -h, --help          このヘルプを表示する
 
     ENVIRONMENT:
       BC768_SERVICE_UUID / BC768_WRITE_CHAR_1 / BC768_WRITE_CHAR_2 /
       BC768_NOTIFY_CHAR_1 / BC768_NOTIFY_CHAR_2 / BC768_NOTIFY_CHAR_3
+      handshake ではさらに BC768_CLIENT_ID / BC768_CMD_0010_PAYLOAD が必要
       (未設定なら ./.env → ~/.config/bc768-probe/env を参照する)
     """
 }
@@ -103,6 +120,18 @@ enum CLI {
                     throw CLIError.invalidValue(option: arg, value: value)
                 }
                 options.waitSeconds = parsed
+            case "--write-char":
+                let value = try nextValue(for: arg)
+                guard let parsed = WriteCharSelection(rawValue: value) else {
+                    throw CLIError.invalidValue(option: arg, value: value)
+                }
+                options.writeChar = parsed
+            case "--response-timeout":
+                let value = try nextValue(for: arg)
+                guard let parsed = Double(value), parsed > 0 else {
+                    throw CLIError.invalidValue(option: arg, value: value)
+                }
+                options.responseTimeout = parsed
             case "--id":
                 let value = try nextValue(for: arg)
                 guard let parsed = UUID(uuidString: value) else {

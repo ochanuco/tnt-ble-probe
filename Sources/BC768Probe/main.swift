@@ -22,7 +22,8 @@ do {
     // scan は Service UUID だけで動く。probe は 5 つの Characteristic UUID も必要。
     config = try ConfigLoader.load(
         explicitPath: options.configPath,
-        requireCharacteristics: options.command == .probe
+        requireCharacteristics: options.command != .scan,
+        requireHandshake: options.command == .handshake
     )
 } catch {
     FileHandle.standardError.write(Data("\(error)\n".utf8))

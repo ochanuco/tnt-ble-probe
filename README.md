@@ -6,8 +6,8 @@ TANITA BC-768（体組成計）と macOS の BLE Pairing / GATT 通信を検証�
 - 実装の説明: [docs/implementation.md](docs/implementation.md)
 - 検証結果: [docs/verification-log.md](docs/verification-log.md)
 
-実装範囲は Phase 1〜2（Scan / Connect / Discovery / Notify 購読 / ログ / 終了処理）まで。
-体組成値のデコード、測定開始コマンドの送信は対象外で、**未知の Characteristic への Write は一切行わない**。
+`scan` / `probe` は Scan / Connect / Discovery / Notify 購読 / ログまで。`handshake` は Android の
+HCI キャプチャで確認済みの通信手順を送る。**推測した payload は一切送らない。**
 
 ## セットアップ
 
@@ -29,9 +29,14 @@ swift build
 # scan → connect → discover → subscribe → wait
 .build/debug/bc768-probe probe
 .build/debug/bc768-probe probe --debug
+
+# 確認済みのハンドシェイクを送る
+.build/debug/bc768-probe handshake --debug
 ```
 
-BC-768 側は、実行前に「設定/通信」ボタンを約 3 秒長押しして Pairing 待機状態にしておく。
+BC-768 側は、実行前に「設定/通信」ボタンを約 3 秒長押しして待機状態にしておく。
+待機状態でないと数秒で BC-768 側から切断される。BLE の Pairing / Bonding は不要
+（[docs/protocol.md](docs/protocol.md) 参照）。
 終了は Ctrl+C（Notify 解除 → disconnect → cleanup を行ってから終了する）。
 
 オプション一覧は `bc768-probe --help` を参照。

@@ -1,3 +1,4 @@
+import BC768Protocol
 import Foundation
 
 enum LogLevel: Int, Comparable {
@@ -55,23 +56,6 @@ enum Log {
         } else {
             FileHandle.standardOutput.write(Data(line.utf8))
         }
-    }
-}
-
-extension Data {
-    /// BLE の送受信データは必ず hex で残す。
-    var hexString: String {
-        map { String(format: "%02x", $0) }.joined()
-    }
-
-    var asciiPreview: String {
-        map { byte -> String in
-            (0x20...0x7e).contains(byte) ? String(UnicodeScalar(byte)) : "."
-        }.joined()
-    }
-
-    var decimalBytes: String {
-        map { String($0) }.joined(separator: " ")
     }
 }
 

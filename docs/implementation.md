@@ -8,15 +8,23 @@ Swift Package（macOS 13+ / Swift 6 ツールチェーン、言語モードは v
 
 ```
 Package.swift
+Sources/BC768Protocol/            CoreBluetooth に依存しないプロトコル層
+  Protocol.swift                  メッセージ / フラグメント / チェックサム / 再構成
+  Hex.swift                       hex 変換
 Sources/BC768Probe/
   main.swift                      CLI entrypoint・シグナル処理・run loop
   CLI.swift                       引数パースと usage
-  Config.swift                    UUID の外部設定（環境変数 / .env）
-  BC768Client.swift               CoreBluetooth delegate（scan / connect / discover / subscribe）
+  Config.swift                    UUID とハンドシェイク値の外部設定（環境変数 / .env）
+  BC768Client.swift               CoreBluetooth delegate（scan / connect / discover / subscribe / handshake）
+  Handshake.swift                 ハンドシェイクの手順定義
   CharacteristicProperties.swift  Property の人間可読化
-  Log.swift                       行指向ロガーと hex ユーティリティ
+  Log.swift                       行指向ロガー
   Info.plist                      NSBluetoothAlwaysUsageDescription
+Tests/BC768ProtocolTests/         プロトコル層のユニットテスト
 ```
+
+プロトコル層は CoreBluetooth に依存しない独立ターゲットにしてあるので、そのままテストできる。
+将来 Go へ移植する際もこの層の仕様（`docs/protocol.md`）だけを写せばよい。
 
 CLI 名（product 名）は `bc768-probe`、モジュール名は `BC768Probe`。
 
@@ -52,6 +60,13 @@ Bluetooth の使用許可は実行するターミナルアプリに紐づく。�
 | `NOTIFY_CHAR_2` | `BC768_NOTIFY_CHAR_2` | Notify |
 | `NOTIFY_CHAR_3` | `BC768_NOTIFY_CHAR_3` | Notify |
 
+`handshake` はさらに以下を必要とする（Android HCI キャプチャ由来の値）。
+
+| 環境変数 | 用途 |
+| --- | --- |
+| `BC768_CLIENT_ID` | `0x0003` で送るクライアント識別子（36 文字の UUID 文字列） |
+| `BC768_CMD_0010_PAYLOAD` | `0x0010` で送る payload（hex） |
+
 `scan` は `SERVICE_UUID` のみ、`probe` は 6 つすべてを必須とする。不足時はどの論理 UUID が足りないかと
 探索したファイルパスを表示して終了コード 2 で終わる。
 
@@ -65,6 +80,7 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | --- | --- |
 | `scan` | 広告情報を表示するだけ。接続しない |
 | `probe` | scan → connect → discover services → discover characteristics → subscribe → wait |
+| `handshake` | probe に続けて、HCI ログで確認済みのハンドシェイクを送る |
 
 | オプション | 既定 | 内容 |
 | --- | --- | --- |
@@ -76,6 +92,8 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | `--read-all` | off | readable な Characteristic を read する（Write はしない） |
 | `--id <uuid>` | - | scan を省略して既知の Peripheral 識別子へ直接接続 |
 | `--wait <sec>` | 0 | 接続後の待機秒数。0 で Ctrl+C まで待機 |
+| `--write-char <sel>` | auto | handshake の送信先（`auto` / `write1` / `write2`） |
+| `--response-timeout <sec>` | 3 | handshake の応答待ちタイムアウト |
 
 `probe` は開始時に `retrieveConnectedPeripherals(withServices:)` を確認する。Bonding 済みで macOS が既に接続を
 保持している場合、広告が出ず scan で見つからないことがあるため。
@@ -105,11 +123,31 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 エラーは `localizedDescription (domain=... code=...)` の形式で残す。`DISCONNECTED` には CBError の種類に応じた
 `hint` を付ける（自動リトライや自動書き込みは行わない。判断は人間が行う）。
 
+## handshake
+
+`docs/protocol.md` で特定した手順を順に送る。各ステップは応答コマンドを待ってから次へ進む。
+
+```text
+identify     0x0003 <client id>   → 0x8003
+session      0x0010 <payload>     → 0x8010
+device-info  0x0020 00            → 0x8020
+read-data    0x1000 00            → 0x9000
+finish       0x0001 00            → 0x8001
+```
+
+- 送信は Write Without Response。フラグメントは Android と同じ 20 バイト固定で、15ms 間隔で送る。
+  MTU が広がっても広げない（BC-768 が大きいフラグメントを受け付けるか未検証のため）。
+- 応答は Notify を再構成して解釈し、チェックサムを検証する。
+- `--write-char auto`（既定）では `WRITE_CHAR_1` に送り、最初のステップで応答がなければ
+  `WRITE_CHAR_2` へ切り替えて 1 度だけ再試行する。HCI ログから handle と UUID の対応が取れないため。
+- `0x1002`（データ書き込み / 設定）は BC-768 の状態を変える可能性があるため**送らない**。
+
 ## 安全性
 
-- 既定動作は Scan / Connect / Discover / Subscribe / Log まで。
-- `WRITE_CHAR_1` / `WRITE_CHAR_2` への Write は実装していない。空データ・ランダム・推測 payload の送信も行わない。
-- `--read-all` は副作用のない read のみ。Pairing 誘発の観測用のオプトイン。
+- `scan` / `probe` の既定動作は Scan / Connect / Discover / Subscribe / Log まで。Write は行わない。
+- `handshake` が送るのは Android HCI キャプチャで観測済みの payload のみ。
+  空データ・ランダム・推測した payload は送らない。
+- `--read-all` は副作用のない read のみ。
 
 ## 終了処理
 

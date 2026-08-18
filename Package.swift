@@ -8,8 +8,11 @@ let package = Package(
         .executable(name: "bc768-probe", targets: ["BC768Probe"])
     ],
     targets: [
+        // CoreBluetooth に依存しない BC-768 独自プロトコル層。
+        .target(name: "BC768Protocol", path: "Sources/BC768Protocol"),
         .executableTarget(
             name: "BC768Probe",
+            dependencies: ["BC768Protocol"],
             path: "Sources/BC768Probe",
             exclude: ["Info.plist"],
             swiftSettings: [.swiftLanguageMode(.v5)],
@@ -23,6 +26,11 @@ let package = Package(
                     "-Xlinker", "Sources/BC768Probe/Info.plist",
                 ])
             ]
+        ),
+        .testTarget(
+            name: "BC768ProtocolTests",
+            dependencies: ["BC768Protocol"],
+            path: "Tests/BC768ProtocolTests"
         )
     ]
 )
