@@ -54,9 +54,26 @@ CLI はそれをログと JSON へ、GUI は画面の状態へ変換する。
 ## GUI
 
 ```bash
-./scripts/make-app.sh          # .build/BC-768.app を作る
+./scripts/make-app.sh                    # .build/BC-768.app を作る
+./scripts/make-app.sh release --install  # ~/Applications へ入れる
 open .build/BC-768.app
 ```
+
+### Bluetooth の許可が外れる件
+
+SwiftPM が付ける **ad-hoc 署名はビルドのたびに変わる**。macOS の TCC はアプリを署名で
+識別するため、再ビルドすると「同じバンドル ID なのに署名が違う」と判断され、
+許可が無効になる。2 回目の起動から「Bluetooth の使用が許可されていません」と出るのはこれが原因。
+
+| 場面 | 影響 |
+| --- | --- |
+| 開発中（再ビルドを繰り返す） | 起きる |
+| 配布後（ビルドし直さない） | 起きない |
+
+対処は 2 つ。
+
+- `BC768_SIGN_IDENTITY` に署名 ID を渡す（証明書があれば署名が安定する）
+- `--install` で `~/Applications` へ入れ、そこから起動する（入れ替えるまで許可が保たれる）
 
 | ボタン | 動作 |
 | --- | --- |
