@@ -111,12 +111,15 @@ enum CLIError: Error, CustomStringConvertible {
     case unknownArgument(String)
     case missingValue(String)
     case invalidValue(option: String, value: String)
+    case missingCommand
 
     var description: String {
         switch self {
         case let .unknownArgument(arg): return "不明な引数: \(arg)"
         case let .missingValue(option): return "\(option) には値が必要です"
         case let .invalidValue(option, value): return "\(option) の値が不正です: \(value)"
+        case .missingCommand:
+            return "コマンドを指定してください: scan / probe / handshake / measure / sync / decode"
         }
     }
 }
@@ -222,6 +225,8 @@ enum CLI {
             }
             index += 1
         }
+        // 既定のコマンドは設けない。5 つあるので暗黙に選ばれると分かりにくい。
+        guard sawCommand else { throw CLIError.missingCommand }
         return options
     }
 }

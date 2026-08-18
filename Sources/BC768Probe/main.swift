@@ -25,6 +25,11 @@ if options.command == .decode {
 
 Log.info("bc768-probe command=\(options.command.rawValue) debug=\(options.debug)")
 
+// JSON は測定結果 (0xB010) を受け取ったときだけ出る。受信しないコマンドでは黙って空振りするので知らせる。
+if options.json || options.outputPath != nil, [.scan, .probe].contains(options.command) {
+    Log.error("\(options.command.rawValue) は測定結果を受信しないため JSON は出力されません。measure か sync を使ってください。")
+}
+
 let config: Config
 do {
     // scan は Service UUID だけで動く。probe は 5 つの Characteristic UUID も必要。
