@@ -61,6 +61,8 @@ struct Options {
     var jsonPretty = false
     /// JSON を追記するファイル（JSON Lines）。
     var outputPath: String?
+    /// 新規の測定結果のときだけ JSON を出す。
+    var onlyNew = false
 
     static let usage = """
     bc768-probe - TANITA BC-768 / macOS BLE Pairing 検証 CLI
@@ -98,6 +100,7 @@ struct Options {
       --json              測定結果を JSON で標準出力へ出す (ログは標準エラーへ)
       --pretty            JSON を整形して出す
       --out <path>        JSON を指定ファイルへ 1 行ずつ追記する (JSON Lines)
+      --only-new          新規の測定結果 (日時があり送信対象) のときだけ JSON を出す
       --command <hex>     decode で hex を payload として扱うときのコマンド番号
                           (例: --command B010。省略時はメッセージ全体として解釈)
       -h, --help          このヘルプを表示する
@@ -201,6 +204,8 @@ enum CLI {
                 options.json = true
             case "--pretty":
                 options.jsonPretty = true
+            case "--only-new":
+                options.onlyNew = true
             case "--out":
                 options.outputPath = try nextValue(for: arg)
             case "--command":

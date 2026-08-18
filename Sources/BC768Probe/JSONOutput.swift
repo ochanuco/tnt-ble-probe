@@ -6,6 +6,10 @@ import Foundation
 enum JSONOutput {
     static func emit(_ record: BC768MeasurementRecord, options: Options) {
         guard options.json || options.outputPath != nil else { return }
+        if options.onlyNew, !record.isNewMeasurement {
+            Log.info("新規の測定結果ではないため JSON は出力しません（--only-new）。")
+            return
+        }
 
         let line: String
         do {

@@ -110,6 +110,7 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | `--json` | off | 測定結果を JSON で標準出力へ出す（ログは標準エラーへ回る） |
 | `--pretty` | off | JSON を整形して出す |
 | `--out <path>` | - | JSON を 1 行ずつ追記する（JSON Lines） |
+| `--only-new` | off | 新規の測定結果のときだけ JSON を出す |
 
 `probe` は開始時に `retrieveConnectedPeripherals(withServices:)` を確認する。Bonding 済みで macOS が既に接続を
 保持している場合、広告が出ず scan で見つからないことがあるため。
@@ -230,6 +231,18 @@ bc768-probe decode --command B010 --json --pretty <payload hex>
 その場合 `retrievedAt` しか手がかりがないので、測定時刻としては使えない。
 
 `sendPending` は直前の `0x3000` 応答が示した「タイムスタンプ付きで送信対象になるデータがあるか」。
+
+### 新規データだけを保存する
+
+`--only-new` を付けると、**日時があり送信対象として立っているレコードだけ**を出力する。
+BC-768 は `0x3010` で引き取ると日時をクリアするため、この判定で重複も取り逃しも起きない。
+
+```bash
+bc768-probe sync --only-new --out ~/health/bc768.jsonl
+```
+
+`sync` を定期実行しても、新規の測定がなければ何も書かれない。
+`0xB000` を観測していない `decode` では、日時の有無だけで判断する。
 
 JSON が出るのは `0xB010` を受け取ったときだけなので、`scan` / `probe` で `--json` や `--out` を
 指定しても何も出ない。その場合は警告を出す。

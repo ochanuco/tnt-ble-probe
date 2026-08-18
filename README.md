@@ -50,6 +50,9 @@ swift build
 # 測定結果を JSON で受け取る / ファイルへ蓄積する
 .build/debug/bc768-probe measure --json | jq .
 .build/debug/bc768-probe measure --out ~/health/bc768.jsonl
+
+# 新規の測定結果があるときだけ拾う（定期実行向け）
+.build/debug/bc768-probe sync --only-new --out ~/health/bc768.jsonl
 ```
 
 BC-768 は時計を持たないため、**接続下で測定したときだけ測定日時が付く**。

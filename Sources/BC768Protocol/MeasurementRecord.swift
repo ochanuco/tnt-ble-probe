@@ -110,6 +110,14 @@ public struct BC768MeasurementRecord: Encodable {
         )
     }
 
+    /// 新規の測定結果か。日時があり、かつ送信対象として立っているものだけを新規とみなす。
+    /// BC-768 は引き取ると日時をクリアするため、この判定で重複も取り逃しも起きない。
+    /// `sendPending` が取れていない場合（オフラインの `decode` など）は日時の有無だけで判断する。
+    public var isNewMeasurement: Bool {
+        guard hasTimestamp else { return false }
+        return sendPending ?? true
+    }
+
     /// JSON Lines の 1 行として出力する（改行なし）。
     public func jsonLine() throws -> String {
         let encoder = JSONEncoder()

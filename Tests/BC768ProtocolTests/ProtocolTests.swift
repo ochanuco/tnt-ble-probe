@@ -358,3 +358,49 @@ final class MeasurementRecordTests: XCTestCase {
         XCTAssertTrue(checks.allSatisfy { $0["passed"] as? Bool == true })
     }
 }
+
+/// 新規判定。BC-768 は引き取ると日時をクリアするため、日時と送信フラグの両方で見る。
+final class NewMeasurementTests: XCTestCase {
+    /// 日付・時刻が「ともにゼロ」のときだけ日時なしとみなされる（実機の挙動に合わせている）。
+    private func makeRecord(days: UInt16, halfSeconds: UInt32 = 0x003508, sendPending: Bool?) -> BC768MeasurementRecord {
+        var data = Data([0x00, 0x01])
+        data.append(contentsOf: [0x6A, 0x32, UInt8(days >> 8), UInt8(days & 0xFF)])
+        data.append(contentsOf: [0x6A, 0x33,
+                                 UInt8((halfSeconds >> 16) & 0xFF),
+                                 UInt8((halfSeconds >> 8) & 0xFF),
+                                 UInt8(halfSeconds & 0xFF)])
+        data.append(contentsOf: [0x60, 0x21, 0x1B, 0x58])
+        return BC768MeasurementRecord(
+            command: 0xB010,
+            payload: data,
+            parseResult: BC768TLV.parse(data, headerLength: 2),
+            sendPending: sendPending,
+            retrievedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+    }
+
+    func testNewWhenTimestampAndPending() {
+        XCTAssertTrue(makeRecord(days: 7305, sendPending: true).isNewMeasurement)
+    }
+
+    func testNotNewWhenAlreadyRetrieved() {
+        // 引き取り済み: 送信フラグが落ちている
+        XCTAssertFalse(makeRecord(days: 7305, sendPending: false).isNewMeasurement)
+    }
+
+    func testNotNewWithoutTimestamp() {
+        // 日時ゼロ（日付・時刻ともに 0）: 引き取り済みか接続外測定
+        XCTAssertFalse(makeRecord(days: 0, halfSeconds: 0, sendPending: true).isNewMeasurement)
+        XCTAssertFalse(makeRecord(days: 0, halfSeconds: 0, sendPending: nil).isNewMeasurement)
+    }
+
+    func testMidnightMeasurementIsStillNew() {
+        // 当日 0 時ちょうどの測定は時刻が 0 になるが、日付が入っていれば新規として扱う
+        XCTAssertTrue(makeRecord(days: 7305, halfSeconds: 0, sendPending: true).isNewMeasurement)
+    }
+
+    func testFallsBackToTimestampWhenPendingUnknown() {
+        // decode などで 0xB000 を観測していない場合は日時の有無で判断する
+        XCTAssertTrue(makeRecord(days: 7305, sendPending: nil).isNewMeasurement)
+    }
+}
