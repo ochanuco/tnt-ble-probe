@@ -668,3 +668,48 @@ BC-768 は次の構成を持つ。これに一致すれば UUID を知らなく�
 **設定に UUID を書く必要はない。** 他人の環境でも `discover --save` で自動生成できる。
 残る個体依存はクライアント識別子だけで、これは機器に登録済みの値でなければ
 `0x0003` が `0001`（未登録）で拒否される。
+
+## 2026-08-19 使われていない Characteristic の検証
+
+5 本のうち通信に登場するのは `WRITE_CHAR_1` と `NOTIFY_CHAR_3` だけだが、
+残り 3 本が「使えない」のか「使われていないだけ」なのかを確かめた。
+
+### 記録からの集計
+
+| 経路 | 回数 | 内訳 |
+| --- | --- | --- |
+| macOS で受信した Notify | 104 | **すべて `NOTIFY_CHAR_3`** |
+| macOS で送信した Write | 71 | すべて `WRITE_CHAR_1`（こちらが選んだため） |
+| Android の Notification（HCI 3 ログ） | 123 | すべて handle `0x0017` = `NOTIFY_CHAR_3` |
+| Android の WriteCommand（同） | 90 | すべて handle `0x001A` = `WRITE_CHAR_1` |
+
+macOS 側は `NOTIFY_CHAR_1/2/3` を **3 本とも購読した状態**で通信していた。
+受信側が絞っていないのに 104 回すべて `NOTIFY_CHAR_3` に届いている。
+Android は `NOTIFY_CHAR_1/2` の CCCD へ書き込みすらしていない。
+
+→ **`NOTIFY_CHAR_1` と `NOTIFY_CHAR_2` は通知を送ってこない。**
+
+### `WRITE_CHAR_2` への送信（実験）
+
+`--write-char write2 --steps identify` で `WRITE_CHAR_2` へ `0x0003` を送った。
+
+```text
+→ WRITE_CHAR_2 へ 3 フラグメント
+← NOTIFY_CHAR_3 で 0x8003 payload=0000（受理）
+```
+
+**受理された。** `WRITE_CHAR_2` もコマンドを受け付ける。応答は write 先に関わらず
+`NOTIFY_CHAR_3` に返る。
+
+### 結論
+
+| Characteristic | 状態 |
+| --- | --- |
+| `WRITE_CHAR_1` | Android・macOS とも常用 |
+| `WRITE_CHAR_2` | **使えるが、Android は一度も使っていない** |
+| `NOTIFY_CHAR_1` / `NOTIFY_CHAR_2` | 購読しても通知が来ない |
+| `NOTIFY_CHAR_3` | 唯一の通知経路 |
+
+「使われていない」と「使えない」は別で、write については前者だけが成立する。
+2 本ある理由は不明（冗長化か、未使用の用途か）。
+実装は Android に合わせて `WRITE_CHAR_1` を既定にしておく。

@@ -28,7 +28,7 @@ Android は Service 内の 5 つの Characteristic のうち、実際には 2 �
 | --- | --- | --- |
 | `0x0017` | Notification 送信元（`NOTIFY_CHAR` のいずれか 1 本） | 75 |
 | `0x0018` | `0x0017` の CCCD。`0x0001` を Write Request で書いて Notify 有効化 | 4 |
-| `0x001A` | Write Command 送信先（`WRITE_CHAR` のいずれか 1 本） | 58 |
+| `0x001A` | Write Command 送信先（= `WRITE_CHAR_1`） | 58 |
 
 キャプチャに GATT Discovery が含まれていない（Android がキャッシュ済み）ため、
 **handle と UUID の対応は未確定**。`WRITE_CHAR_1` / `WRITE_CHAR_2` のどちらへ書くかは実機で確かめる必要がある。
