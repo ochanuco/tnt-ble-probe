@@ -118,3 +118,36 @@ public enum BC768Consistency {
         return results
     }
 }
+
+/// 測定結果レコード（`0xB010`）の妥当性判定。
+///
+/// BC-768 は最後の測定値をバッファに保持しており、**取り出せるデータが無くても `0x3010` に応答する**。
+/// その場合 payload の日付・時刻がともに 0 になり、先頭ヘッダの値も変わる。
+/// 日時がゼロのレコードを新しい測定結果として扱ってはいけない。
+public enum BC768Record {
+    /// `0xB010` payload の先頭 2 バイト。測定直後は `0x0001`、残留値では `0x0501` を観測している。
+    public static func header(of payload: Data) -> UInt16? {
+        guard payload.count >= 2 else { return nil }
+        let base = payload.startIndex
+        return UInt16(payload[base]) << 8 | UInt16(payload[base + 1])
+    }
+
+    /// 日付・時刻が入っているか。ゼロなら BC-768 に残っていた前回値。
+    public static func hasTimestamp(_ fields: [BC768TLVField]) -> Bool {
+        let days = fields.first { $0.tag == 0x6A32 }?.unsignedValue ?? 0
+        let halfSeconds = fields.first { $0.tag == 0x6A33 }?.unsignedValue ?? 0
+        return !(days == 0 && halfSeconds == 0)
+    }
+
+    /// `0x3000` の応答（`0xB000`）payload が示す「取り出せるデータの有無」。
+    /// 観測値は測定直後が `0x0001`、それ以外が `0x0000`。未知の値では判断しない。
+    public static func hasPendingData(_ payload: Data) -> Bool? {
+        guard payload.count >= 2 else { return nil }
+        let base = payload.startIndex
+        switch UInt16(payload[base]) << 8 | UInt16(payload[base + 1]) {
+        case 0x0000: return false
+        case 0x0001: return true
+        default: return nil
+        }
+    }
+}

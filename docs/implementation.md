@@ -86,6 +86,7 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | `probe` | scan → connect → discover services → discover characteristics → subscribe → wait |
 | `handshake` | probe に続けて、HCI ログで確認済みのハンドシェイクを送る |
 | `measure` | handshake に続けて測定を開始し、結果を受け取る |
+| `sync` | 測定は開始せず、保持されているデータの有無を確認して取得する |
 | `decode` | 受信済みの hex を TLV として解釈する（BLE を使わない） |
 
 | オプション | 既定 | 内容 |
@@ -150,6 +151,11 @@ measure      0x2010 00            → 0xA010     応答待ち 120 秒。この�
 complete     0x3000 00            → 0xB000
 result       0x3010 01            → 0xB010     測定結果
 ```
+
+`sync` は `measure` から `0x2010` だけを外したもの。その場で測らず、BC-768 が保持している
+データを引き取る用途。`0xB000` の payload をログに解釈して出し、データが無ければその旨を表示する。
+`0x3010` はデータが無くても前回値を返すため、日時がゼロのレコードには `ERROR` を出して警告する
+（`docs/protocol.md` の「データの保持と取得」を参照）。
 
 - 送信は Write Without Response。フラグメントは Android と同じ 20 バイト固定で、15ms 間隔で送る。
   MTU が広がっても広げない（BC-768 が大きいフラグメントを受け付けるか未検証のため）。

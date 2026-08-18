@@ -232,3 +232,45 @@ final class ConsistencyTests: XCTestCase {
         XCTAssertTrue(BC768Consistency.checks(for: []).isEmpty)
     }
 }
+
+/// 「取り出せるデータがあるか」「返ってきたレコードが有効か」の判定。
+/// BC-768 はデータが無くても 0x3010 に応答し、前回値をそのまま返すため必要になる。
+final class RecordTests: XCTestCase {
+    func testHeader() {
+        XCTAssertEqual(BC768Record.header(of: Data([0x00, 0x01, 0x6A])), 0x0001)
+        XCTAssertEqual(BC768Record.header(of: Data([0x05, 0x01])), 0x0501)
+        XCTAssertNil(BC768Record.header(of: Data([0x00])))
+    }
+
+    func testHasTimestampDetectsResidualRecord() {
+        // 日付・時刻がゼロ → BC-768 に残っていた前回値
+        let residual = [
+            BC768TLVField(tag: 0x6A32, value: Data([0x00, 0x00])),
+            BC768TLVField(tag: 0x6A33, value: Data([0x00, 0x00, 0x00])),
+        ]
+        XCTAssertFalse(BC768Record.hasTimestamp(residual))
+
+        let fresh = [
+            BC768TLVField(tag: 0x6A32, value: Data([0x25, 0xFF])),
+            BC768TLVField(tag: 0x6A33, value: Data([0x00, 0x35, 0x08])),
+        ]
+        XCTAssertTrue(BC768Record.hasTimestamp(fresh))
+    }
+
+    func testHasTimestampNeedsBothZero() {
+        // 片方だけゼロなら残留値とは判定しない
+        let dayOnly = [
+            BC768TLVField(tag: 0x6A32, value: Data([0x25, 0xFF])),
+            BC768TLVField(tag: 0x6A33, value: Data([0x00, 0x00, 0x00])),
+        ]
+        XCTAssertTrue(BC768Record.hasTimestamp(dayOnly))
+    }
+
+    func testPendingData() {
+        XCTAssertEqual(BC768Record.hasPendingData(Data([0x00, 0x00])), false)
+        XCTAssertEqual(BC768Record.hasPendingData(Data([0x00, 0x01])), true)
+        // 未知の値では判断しない
+        XCTAssertNil(BC768Record.hasPendingData(Data([0x00, 0x02])))
+        XCTAssertNil(BC768Record.hasPendingData(Data([0x00])))
+    }
+}

@@ -26,6 +26,11 @@ struct HandshakeStep {
 
     /// 既定のハンドシェイク（測定は行わない）。
     static let defaultLabels = ["identify", "session", "device-info", "read-data", "finish"]
+    /// 測定は開始せず、BC-768 が保持しているデータの有無を確認して取得する流れ。
+    static let syncLabels = [
+        "identify", "session", "device-info", "read-data",
+        "complete", "result", "finish",
+    ]
     /// 測定まで通す一連の流れ。HCI キャプチャで測定に成功したセッションと同じ順序。
     static let measureLabels = [
         "identify", "session", "device-info", "read-data",

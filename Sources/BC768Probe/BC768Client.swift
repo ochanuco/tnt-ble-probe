@@ -373,7 +373,7 @@ extension BC768Client: CBPeripheralDelegate {
             subscribedCount += 1
             if subscribedCount == targetNotifyChars.count {
                 Log.info("Notify 購読が \(subscribedCount) 件すべて有効になりました。")
-                if options.command == .handshake || options.command == .measure {
+                if [.handshake, .measure, .sync].contains(options.command) {
                     if options.handshakeDelay > 0 {
                         Log.info("\(options.handshakeDelay) 秒待ってから handshake を開始します。")
                         queue.asyncAfter(deadline: .now() + options.handshakeDelay) { [weak self] in
@@ -558,6 +558,7 @@ extension BC768Client {
         let result = BC768TLV.parse(message.payload, headerLength: headerLength)
         Log.event("DECODED", [
             ("command", String(format: "0x%04X", message.command)),
+            ("header", BC768Record.header(of: message.payload).map { String(format: "0x%04X", $0) }),
             ("fields", String(result.fields.count)),
             ("unparsed", {
                 if case let .partial(_, unparsed) = result { return unparsed.hexString }
@@ -573,6 +574,10 @@ extension BC768Client {
         for check in BC768Consistency.checks(for: result.fields) {
             Log.info("  [検算] " + check.description)
         }
+        // BC-768 は取り出せるデータが無くても 0x3010 に応答し、前回値をそのまま返す。
+        if message.command == 0xB010, !BC768Record.hasTimestamp(result.fields) {
+            Log.error("このレコードは日付・時刻がゼロです。新しい測定結果ではなく、BC-768 に残っていた前回値です。")
+        }
     }
 }
 
@@ -585,9 +590,16 @@ extension BC768Client {
             shutdown(exitCode: 2)
             return
         }
-        let labels = options.steps ?? (options.command == .measure
-            ? HandshakeStep.measureLabels
-            : HandshakeStep.defaultLabels)
+        let labels: [String]
+        if let explicit = options.steps {
+            labels = explicit
+        } else {
+            switch options.command {
+            case .measure: labels = HandshakeStep.measureLabels
+            case .sync: labels = HandshakeStep.syncLabels
+            default: labels = HandshakeStep.defaultLabels
+            }
+        }
         steps = HandshakeStep.sequence(with: handshake, labels: labels)
         stepIndex = 0
         reassembler.reset()
@@ -700,7 +712,7 @@ extension BC768Client {
     }
 
     func handleHandshakeResponse(_ message: BC768Message, on peripheral: CBPeripheral) {
-        guard options.command == .handshake || options.command == .measure,
+        guard [.handshake, .measure, .sync].contains(options.command),
               stepIndex < steps.count, !handshakeFinished else { return }
         let step = steps[stepIndex]
         guard message.command == step.expected else {
@@ -712,6 +724,17 @@ extension BC768Client {
             return
         }
         responseTimeoutItem?.cancel()
+        // 0xB000 の payload が「取り出せるデータの有無」を示す。
+        if message.command == 0xB000 {
+            let pending = BC768Record.hasPendingData(message.payload)
+            Log.event("PENDING_DATA", [
+                ("payload", message.payload.hexString),
+                ("hasData", pending.map { $0 ? "true" : "false" }),
+            ])
+            if pending == false {
+                Log.info("取り出せる測定データはありません（0x3010 を送っても前回値が返ります）。")
+            }
+        }
         Log.event("STEP_OK", [
             ("step", step.label),
             ("command", String(format: "0x%04X", message.command)),

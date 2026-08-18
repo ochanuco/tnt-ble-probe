@@ -29,7 +29,7 @@ do {
     config = try ConfigLoader.load(
         explicitPath: options.configPath,
         requireCharacteristics: options.command != .scan,
-        requireHandshake: options.command == .handshake || options.command == .measure
+        requireHandshake: [.handshake, .measure, .sync].contains(options.command)
     )
 } catch {
     FileHandle.standardError.write(Data("\(error)\n".utf8))

@@ -42,6 +42,7 @@ enum DecodeCommand {
         let result = BC768TLV.parse(payload, headerLength: headerLength)
         Log.event("DECODED", [
             ("command", String(format: "0x%04X", command)),
+            ("header", BC768Record.header(of: payload).map { String(format: "0x%04X", $0) }),
             ("headerLength", String(headerLength)),
             ("fields", String(result.fields.count)),
         ])
@@ -53,6 +54,9 @@ enum DecodeCommand {
         }
         for check in BC768Consistency.checks(for: result.fields) {
             Log.info("  [検算] " + check.description)
+        }
+        if command == 0xB010, !BC768Record.hasTimestamp(result.fields) {
+            Log.error("このレコードは日付・時刻がゼロです。新しい測定結果ではなく、BC-768 に残っていた前回値です。")
         }
     }
 }

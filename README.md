@@ -41,6 +41,9 @@ swift build
 # 測定を実行して結果を受け取る
 .build/debug/bc768-probe measure --debug
 
+# 測定は開始せず、保持されているデータを引き取る
+.build/debug/bc768-probe sync --debug
+
 # ログに残した hex を後から解釈する（BLE 不要）
 .build/debug/bc768-probe decode --command B010 <payload hex>
 ```

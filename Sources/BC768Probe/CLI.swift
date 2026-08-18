@@ -5,6 +5,7 @@ enum Command: String {
     case probe
     case handshake
     case measure
+    case sync
     case decode
 }
 
@@ -65,6 +66,7 @@ struct Options {
       probe      scan → connect → discover → subscribe → wait を実行する
       handshake  probe に続けて、HCI ログで確認済みのハンドシェイクを送る
       measure    handshake に続けて測定を開始し、結果を受け取る
+      sync       測定は開始せず、BC-768 が保持しているデータの有無を確認して取得する
       decode     受信済みの hex を TLV として解釈する (BLE を使わない)
 
     OPTIONS:
