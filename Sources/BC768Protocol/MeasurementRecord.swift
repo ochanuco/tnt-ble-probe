@@ -4,28 +4,28 @@ import Foundation
 ///
 /// 確定している項目はトップレベルに、検算できていない推定項目は `estimated` にまとめてある。
 /// `raw` には受信 payload と TLV をそのまま入れるので、あとで解釈をやり直せる。
-public struct BC768MeasurementRecord: Encodable {
-    public struct Estimated: Encodable {
+public struct BC768MeasurementRecord: Codable {
+    public struct Estimated: Codable {
         public let basalMetabolismKcal: Double?
         public let metabolicAgeYears: Double?
         public let visceralFatLevel: Double?
         public let bodyWaterPercent: Double?
     }
 
-    public struct Check: Encodable {
+    public struct Check: Codable {
         public let label: String
         public let computed: Double
         public let received: Double
         public let passed: Bool
     }
 
-    public struct RawField: Encodable {
+    public struct RawField: Codable {
         public let tag: String
         public let value: String
         public let label: String?
     }
 
-    public struct Raw: Encodable {
+    public struct Raw: Codable {
         public let command: String
         public let header: String?
         public let payload: String

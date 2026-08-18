@@ -8,6 +8,7 @@ Swift Package（macOS 13+ / Swift 6 ツールチェーン、言語モードは v
 
 ```
 Package.swift
+scripts/make-app.sh               GUI を .app バンドルへ組み立てる
 Sources/BC768Protocol/            CoreBluetooth に依存しないプロトコル層
   Protocol.swift                  メッセージ / フラグメント / チェックサム / 再構成
   DateTime.swift                  日時エンコード
@@ -15,15 +16,26 @@ Sources/BC768Protocol/            CoreBluetooth に依存しないプロトコ�
   Measurement.swift               測定値のラベル付け・検算・レコードの妥当性判定
   MeasurementRecord.swift         JSON 出力用の表現
   Hex.swift                       hex 変換
+Sources/BC768BLE/                 CoreBluetooth を使うセッション層（CLI と GUI が共有）
+  Session.swift                   scan / connect / discover / subscribe / handshake
+  Events.swift                    イベント（ログ・進捗・測定結果・完了）
+  Configuration.swift             UUID とセッション設定
+  Config.swift                    環境変数 / .env の読み込み
+  Handshake.swift                 ハンドシェイクの手順定義
+  CharacteristicProperties.swift  Property の人間可読化
+  Errors.swift                    エラー整形
+Sources/BC768App/                 SwiftUI の GUI
+  BC768AppMain.swift              エントリポイント
+  ContentView.swift               ボタン・表・ログ
+  SessionController.swift         セッションの実行と状態
+  MeasurementStore.swift          JSON Lines への蓄積と CSV 書き出し
+  Info.plist                      NSBluetoothAlwaysUsageDescription
 Sources/BC768Probe/
   main.swift                      CLI entrypoint・シグナル処理・run loop
   CLI.swift                       引数パースと usage
-  Config.swift                    UUID とハンドシェイク値の外部設定（環境変数 / .env）
-  BC768Client.swift               CoreBluetooth delegate（scan / connect / discover / subscribe / handshake）
-  Handshake.swift                 ハンドシェイクの手順定義
+  CLI.swift                       引数パース（再掲）
   Decode.swift                    decode コマンド（オフライン解釈）
   JSONOutput.swift                JSON の標準出力・ファイル追記
-  CharacteristicProperties.swift  Property の人間可読化
   Log.swift                       行指向ロガー
   Info.plist                      NSBluetoothAlwaysUsageDescription
 Tests/BC768ProtocolTests/         プロトコル層のユニットテスト
@@ -31,6 +43,27 @@ Tests/BC768ProtocolTests/         プロトコル層のユニットテスト
 
 プロトコル層は CoreBluetooth に依存しない独立ターゲットにしてあるので、そのままテストできる。
 将来 Go へ移植する際もこの層の仕様（`docs/protocol.md`）だけを写せばよい。
+
+BLE のセッション層（`BC768BLE`）はログ出力も終了処理も持たず、イベントを流すだけにしてある。
+CLI はそれをログと JSON へ、GUI は画面の状態へ変換する。
+
+## GUI
+
+```bash
+./scripts/make-app.sh          # .build/BC-768.app を作る
+open .build/BC-768.app
+```
+
+| ボタン | 動作 |
+| --- | --- |
+| 入力 | `measure` 相当。本体の「入力モード」を押して乗ると結果が入る |
+| 確認 | `sync` 相当。測定せず、保持されているデータを取り込む |
+| 送信 | 蓄積した記録を CSV で書き出す（スプレッドシート向け） |
+
+取り込んだ記録は `~/Library/Application Support/bc768-probe/records.jsonl` に貯まる。
+CLI の `--out` と同じ JSON Lines なので、同じファイルを指せば両方から扱える。
+測定日時が同じレコードは二重に保存しない。日時のないレコード（接続外測定や引き取り済み）は
+表に「日時なし」と出して区別する。
 
 CLI 名（product 名）は `bc768-probe`、モジュール名は `BC768Probe`。
 

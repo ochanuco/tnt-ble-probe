@@ -1,10 +1,9 @@
-import BC768BLE
 import BC768Protocol
 import CoreBluetooth
 import Foundation
 
 /// 論理 UUID 名。実値はソースにも docs にも書かず、環境変数 / .env から与える。
-enum ConfigKey: String, CaseIterable {
+public enum ConfigKey: String, CaseIterable {
     case serviceUUID = "BC768_SERVICE_UUID"
     case writeChar1 = "BC768_WRITE_CHAR_1"
     case writeChar2 = "BC768_WRITE_CHAR_2"
@@ -13,7 +12,7 @@ enum ConfigKey: String, CaseIterable {
     case notifyChar3 = "BC768_NOTIFY_CHAR_3"
 
     /// 仕様書上の論理名。
-    var logicalName: String {
+    public var logicalName: String {
         switch self {
         case .serviceUUID: return "SERVICE_UUID"
         case .writeChar1: return "WRITE_CHAR_1"
@@ -25,13 +24,13 @@ enum ConfigKey: String, CaseIterable {
     }
 }
 
-enum ConfigError: Error, CustomStringConvertible {
+public enum ConfigError: Error, CustomStringConvertible {
     case missing([ConfigKey], searchedPaths: [String])
     case invalidUUID(key: ConfigKey, value: String)
     case missingHandshakeValue(keys: [String], searchedPaths: [String])
     case invalidHex(key: String, value: String)
 
-    var description: String {
+    public var description: String {
         switch self {
         case let .missing(keys, paths):
             var text = "UUID 設定が不足しています。以下の論理 UUID を設定してください:\n"
@@ -59,17 +58,23 @@ enum ConfigError: Error, CustomStringConvertible {
     }
 }
 
-enum ConfigLoader {
+public enum ConfigLoader {
     /// 読み込み優先度: 環境変数 > 明示指定 .env > ./.env > ~/.config/bc768-probe/env
-    static func load(explicitPath: String?, requireCharacteristics: Bool, requireHandshake: Bool = false) throws -> BC768Configuration {
+    /// `onLog` は読み込み過程の補足を伝えるためのもの（ライブラリ層は出力先を持たない）。
+    public static func load(
+        explicitPath: String?,
+        requireCharacteristics: Bool,
+        requireHandshake: Bool = false,
+        onLog: ((String) -> Void)? = nil
+    ) throws -> BC768Configuration {
         var searchedPaths: [String] = []
         var fileValues: [String: String] = [:]
 
         for path in candidatePaths(explicitPath: explicitPath) {
             searchedPaths.append(path)
             guard FileManager.default.fileExists(atPath: path) else { continue }
-            let loaded = parseEnvFile(atPath: path)
-            Log.debug("config file loaded: \(path) (keys=\(loaded.keys.sorted().joined(separator: ",")))")
+            let loaded = parseEnvFile(atPath: path, onLog: onLog)
+            onLog?("config file loaded: \(path) (keys=\(loaded.keys.sorted().joined(separator: ",")))")
             // 先に見つかったファイルを優先し、後続では未定義キーだけ補う。
             for (key, value) in loaded where fileValues[key] == nil {
                 fileValues[key] = value
@@ -153,9 +158,9 @@ enum ConfigLoader {
     }
 
     /// KEY=VALUE 形式の最小パーサ。`#` 始まりの行と空行は無視する。
-    private static func parseEnvFile(atPath path: String) -> [String: String] {
+    private static func parseEnvFile(atPath path: String, onLog: ((String) -> Void)? = nil) -> [String: String] {
         guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else {
-            Log.error("設定ファイルを読み込めませんでした: \(path)")
+            onLog?("設定ファイルを読み込めませんでした: \(path)")
             return [:]
         }
         var values: [String: String] = [:]

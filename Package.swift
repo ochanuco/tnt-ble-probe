@@ -5,7 +5,8 @@ let package = Package(
     name: "bc768-probe",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "bc768-probe", targets: ["BC768Probe"])
+        .executable(name: "bc768-probe", targets: ["BC768Probe"]),
+        .executable(name: "bc768-app", targets: ["BC768App"]),
     ],
     targets: [
         // CoreBluetooth に依存しない BC-768 独自プロトコル層。
@@ -31,6 +32,22 @@ let package = Package(
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
                     "-Xlinker", "Sources/BC768Probe/Info.plist",
+                ])
+            ]
+        ),
+        .executableTarget(
+            name: "BC768App",
+            dependencies: ["BC768Protocol", "BC768BLE"],
+            path: "Sources/BC768App",
+            exclude: ["Info.plist"],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [
+                // GUI からも CoreBluetooth を使うため、TCC 用の usage description を埋め込む。
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/BC768App/Info.plist",
                 ])
             ]
         ),

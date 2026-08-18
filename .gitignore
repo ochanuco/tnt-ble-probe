@@ -16,3 +16,6 @@ Package.resolved
 .DS_Store
 *.xcodeproj
 *.xcworkspace
+
+# --- GUI のビルド成果物 ---
+*.app

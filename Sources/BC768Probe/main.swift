@@ -37,7 +37,8 @@ do {
     config = try ConfigLoader.load(
         explicitPath: options.configPath,
         requireCharacteristics: options.command != .scan,
-        requireHandshake: [.handshake, .measure, .sync].contains(options.command)
+        requireHandshake: [.handshake, .measure, .sync].contains(options.command),
+        onLog: { Log.debug($0) }
     )
 } catch {
     FileHandle.standardError.write(Data("\(error)\n".utf8))

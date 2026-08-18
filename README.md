@@ -73,6 +73,16 @@ Service / Characteristic UUID とクライアント識別子は**このリポジ
 
 UUID は手元の BC-768 に対して `bc768-probe scan --no-filter` や汎用の BLE ツールで確認できる。
 
+## GUI
+
+```bash
+./scripts/make-app.sh
+open .build/BC-768.app
+```
+
+「入力」「確認」「送信（CSV 書き出し）」のボタンと、取り込んだ記録の表がある。
+記録は `~/Library/Application Support/bc768-probe/records.jsonl` に貯まり、CLI の `--out` と同じ形式。
+
 ## BC-768 側の操作
 
 BC-768 は広告を出していないと接続できないため、本体側の操作が必要になる。
