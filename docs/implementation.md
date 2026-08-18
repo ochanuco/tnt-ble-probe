@@ -139,6 +139,7 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | `measure` | handshake に続けて測定を開始し、結果を受け取る |
 | `sync` | 測定は開始せず、保持されているデータの有無を確認して取得する |
 | `decode` | 受信済みの hex を TLV として解釈する（BLE を使わない） |
+| `discover` | UUID 設定なしで端末を探し、GATT の構成から UUID を割り出す |
 
 | オプション | 既定 | 内容 |
 | --- | --- | --- |
@@ -221,6 +222,26 @@ result       0x3010 01            → 0xB010     測定結果
 - `0x1002`（データ書き込み / 設定）は BC-768 の状態を変える可能性があるため**送らない**。
 - `0x0010` は日時設定コマンドなので、固定値ではなく実行時の現在時刻から組み立てる
   （`docs/protocol.md` の日時エンコードを参照）。
+
+## UUID の自動検出
+
+`discover` は設定を読まずに動く。Service UUID を知らないのでフィルタなしで scan し、
+接続して全 Service / Characteristic を列挙する。
+
+```bash
+bc768-probe discover                    # 見つかった端末を一覧するだけ
+bc768-probe discover --name TNT         # 名前で絞って接続し、構成を調べる
+bc768-probe discover --name TNT --save  # 結果を ~/.config/bc768-probe/env へ書き出す
+```
+
+`--name` で絞らない限り接続しない（知らない機器へ勝手に繋がないため）。
+
+判定は構成で行う。**Service が 1 つだけで、その配下が writeWithoutResponse × 2 と notify × 3**
+という形に一致すれば BC-768 とみなし、UUID 昇順で `WRITE_CHAR_1,2` / `NOTIFY_CHAR_1,2,3` を割り当てる。
+CoreBluetooth が返す順序はばらばらなので、必ず並べ替えてから割り当てる。
+
+`--save` は既存の `BC768_CLIENT_ID` を残したまま UUID だけ書き換える。
+識別子は機器に登録済みの値が必要で、自動生成できない（`docs/protocol.md` 参照）。
 
 ## デコード
 

@@ -24,6 +24,12 @@ if options.command == .decode {
     exit(DecodeCommand.run(options))
 }
 
+// discover は UUID 設定を必要としない（構成から割り出すのが目的）。
+if options.command == .discover {
+    Log.info("bc768-probe command=discover debug=\(options.debug)")
+    DiscoverCommand.run(options)
+}
+
 Log.info("bc768-probe command=\(options.command.rawValue) debug=\(options.debug)")
 
 // JSON は測定結果 (0xB010) を受け取ったときだけ出る。受信しないコマンドでは黙って空振りするので知らせる。

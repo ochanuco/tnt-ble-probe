@@ -69,9 +69,18 @@ BLE の Pairing / Bonding は不要（[docs/protocol.md](docs/protocol.md) 参�
 ## 動かすために必要なもの
 
 Service / Characteristic UUID とクライアント識別子は**このリポジトリに含まれていない**。
-`.env`（git 管理外）に自分で用意する必要がある。設定がなければ、どの値が足りないかを表示して終了する。
 
-UUID は手元の BC-768 に対して `bc768-probe scan --no-filter` や汎用の BLE ツールで確認できる。
+**UUID は自動で取得できる。** 事前に知っている必要はない。
+
+```bash
+bc768-probe discover --name TNT --save
+```
+
+接続して GATT の構成を調べ、「Service 1 つ + writeWithoutResponse × 2 + notify × 3」に
+一致すれば UUID を割り当てて `~/.config/bc768-probe/env` へ書き出す。
+
+**クライアント識別子だけは手当てが要る。** BC-768 に登録済みの値でないと拒否されるため、
+Health Planet が使っている識別子が必要になる（`docs/protocol.md` の「0x8003 の応答コード」を参照）。
 
 ## GUI
 

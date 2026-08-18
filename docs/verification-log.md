@@ -626,3 +626,45 @@ Service / Characteristic UUID は機種共通で、Discovery で自動取得で�
 **登録フローの解析だけ。** UUID は自動取得でき、識別子だけが機器に登録済みである必要がある。
 Health Planet で機器登録をやり直すときの HCI キャプチャがあれば、
 アプリから新しい識別子を登録できるようになり、設定なしで使えるようになる。
+
+## 2026-08-19 UUID は事前知識なしで取得できる（実証）
+
+`discover` コマンドを作り、**UUID 関連の環境変数をすべて外し、設定ファイルも読まない状態**で実行した。
+手がかりは広告名の部分一致（`TNT`）だけ。
+
+### 結果
+
+```text
+localName=TNT_BW    name=BC-768    services=1  characteristics=5
+
+Service（1 つだけ）
+  …510F  [notify]
+  …5108  [writeWithoutResponse]
+  …510E  [notify]
+  …5107  [writeWithoutResponse]
+  …510D  [notify]
+
+→ 構成に一致。UUID 昇順で割り当て
+  SERVICE_UUID / WRITE_CHAR_1,2 / NOTIFY_CHAR_1,2,3
+```
+
+**割り当て結果は、あらかじめ与えられていた値と完全に一致した。**
+
+CoreBluetooth が返す Characteristic の順序はばらばらだが（`510F, 5108, 510E, 5107, 510D`）、
+properties で write / notify に分類してから UUID 昇順に並べ直すため、順序に依存しない。
+
+### 判定条件
+
+BC-768 は次の構成を持つ。これに一致すれば UUID を知らなくても割り当てられる。
+
+- Service が 1 つだけ（標準サービスも公開していない）
+- その配下に writeWithoutResponse が 2 本、notify が 3 本、合計 5 本
+
+広告からは Service UUID と `TNT_BW` が読め、接続後の Device Name は `BC-768`。
+いずれも認証なしで読める（BC-768 は BLE Pairing を要求しない）。
+
+### 結論
+
+**設定に UUID を書く必要はない。** 他人の環境でも `discover --save` で自動生成できる。
+残る個体依存はクライアント識別子だけで、これは機器に登録済みの値でなければ
+`0x0003` が `0001`（未登録）で拒否される。

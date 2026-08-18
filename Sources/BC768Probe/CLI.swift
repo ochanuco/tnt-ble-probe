@@ -8,6 +8,7 @@ enum Command: String {
     case measure
     case sync
     case decode
+    case discover
 }
 
 struct Options {
@@ -49,6 +50,10 @@ struct Options {
     var outputPath: String?
     /// 新規の測定結果のときだけ JSON を出す。
     var onlyNew = false
+    /// discover で接続対象を名前で絞る（部分一致）。
+    var nameFilter: String?
+    /// discover の結果を設定ファイルへ書き出す。
+    var saveConfig = false
 
     static let usage = """
     bc768-probe - TANITA BC-768 / macOS BLE Pairing 検証 CLI
@@ -63,6 +68,7 @@ struct Options {
       measure    handshake に続けて測定を開始し、結果を受け取る
       sync       測定は開始せず、BC-768 が保持しているデータの有無を確認して取得する
       decode     受信済みの hex を TLV として解釈する (BLE を使わない)
+      discover   UUID 設定なしで端末を探し、GATT の構成から UUID を割り出す
 
     OPTIONS:
       --debug             DEBUG ログを有効にする
@@ -87,6 +93,8 @@ struct Options {
       --pretty            JSON を整形して出す
       --out <path>        JSON を指定ファイルへ 1 行ずつ追記する (JSON Lines)
       --only-new          新規の測定結果 (日時があり送信対象) のときだけ JSON を出す
+      --name <text>       discover で接続する端末を名前で絞る (部分一致、例: TNT)
+      --save              discover の結果を設定ファイルへ書き出す
       --command <hex>     decode で hex を payload として扱うときのコマンド番号
                           (例: --command B010。省略時はメッセージ全体として解釈)
       -h, --help          このヘルプを表示する
@@ -109,7 +117,7 @@ extension Options {
         case .handshake: mode = .handshake
         case .measure: mode = .measure
         case .sync: mode = .sync
-        case .decode: mode = .probe   // decode は BLE を使わない
+        case .decode, .discover: mode = .probe   // これらは BC768Session を使わない
         }
         var result = BC768SessionOptions(mode: mode)
         result.noFilter = noFilter
@@ -221,6 +229,10 @@ enum CLI {
                 options.jsonPretty = true
             case "--only-new":
                 options.onlyNew = true
+            case "--name":
+                options.nameFilter = try nextValue(for: arg)
+            case "--save":
+                options.saveConfig = true
             case "--out":
                 options.outputPath = try nextValue(for: arg)
             case "--command":

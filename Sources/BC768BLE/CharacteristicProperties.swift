@@ -2,7 +2,7 @@ import CoreBluetooth
 
 extension CBCharacteristicProperties {
     /// Property を人間が読める形式へ変換する。
-    var humanReadable: [String] {
+    public var humanReadable: [String] {
         var names: [String] = []
         if contains(.broadcast) { names.append("broadcast") }
         if contains(.read) { names.append("read") }
@@ -17,7 +17,7 @@ extension CBCharacteristicProperties {
         return names
     }
 
-    var description: String {
+    public var description: String {
         let names = humanReadable
         return names.isEmpty ? "-" : names.joined(separator: ",")
     }
