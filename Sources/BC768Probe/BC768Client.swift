@@ -28,6 +28,8 @@ final class BC768Client: NSObject {
     private var triedWriteChars: Set<String> = []
     private var nextSeq: UInt8 = 0x02
     private var handshakeFinished = false
+    /// 直近の 0x3000 応答が示した「送信対象データの有無」。0xB010 の記録に添える。
+    private var lastSendPending: Bool?
 
     init(config: Config, options: Options, queue: DispatchQueue) {
         self.config = config
@@ -577,6 +579,16 @@ extension BC768Client {
         for check in BC768Consistency.checks(for: result.fields) {
             Log.info("  [検算] " + check.description)
         }
+        if message.command == 0xB010 {
+            let record = BC768MeasurementRecord(
+                command: message.command,
+                payload: message.payload,
+                parseResult: result,
+                sendPending: lastSendPending,
+                retrievedAt: Date()
+            )
+            JSONOutput.emit(record, options: options)
+        }
         // BC-768 は取り出せるデータが無くても 0x3010 に応答し、前回値をそのまま返す。
         if message.command == 0xB010, !BC768Record.hasTimestamp(result.fields) {
             Log.error("このレコードは日付・時刻がゼロです。接続外で測定された結果か、既に引き取り済みの残留値です。測定時刻は分からず、最新かどうかも判断できません。")
@@ -730,6 +742,7 @@ extension BC768Client {
         // 0xB000 の payload が「取り出せるデータの有無」を示す。
         if message.command == 0xB000 {
             let pending = BC768Record.hasPendingData(message.payload)
+            lastSendPending = pending
             Log.event("PENDING_DATA", [
                 ("payload", message.payload.hexString),
                 ("hasData", pending.map { $0 ? "true" : "false" }),

@@ -16,14 +16,14 @@ enum DecodeCommand {
                 continue
             }
             if let command = options.decodeCommand {
-                describe(command: command, payload: data)
+                describe(command: command, payload: data, options: options)
             } else if let (message, checksumValid) = BC768Message.decode(data) {
                 Log.event("MESSAGE", [
                     ("command", String(format: "0x%04X", message.command)),
                     ("length", String(message.payload.count)),
                     ("checksum", checksumValid ? "ok" : "INVALID"),
                 ])
-                describe(command: message.command, payload: message.payload)
+                describe(command: message.command, payload: message.payload, options: options)
             } else {
                 Log.error("メッセージとして解釈できません（--command で payload として渡せます）: \(hex)")
                 failed = true
@@ -32,7 +32,7 @@ enum DecodeCommand {
         return failed ? 1 : 0
     }
 
-    private static func describe(command: UInt16, payload: Data) {
+    private static func describe(command: UInt16, payload: Data, options: Options) {
         let headerLength: Int
         switch command {
         case 0xB010: headerLength = 2
@@ -56,6 +56,16 @@ enum DecodeCommand {
         }
         for check in BC768Consistency.checks(for: result.fields) {
             Log.info("  [検算] " + check.description)
+        }
+        if command == 0xB010 {
+            let record = BC768MeasurementRecord(
+                command: command,
+                payload: payload,
+                parseResult: result,
+                sendPending: nil,
+                retrievedAt: Date()
+            )
+            JSONOutput.emit(record, options: options)
         }
         if command == 0xB010, !BC768Record.hasTimestamp(result.fields) {
             Log.error("このレコードは日付・時刻がゼロです。接続外で測定された結果か、既に引き取り済みの残留値です。測定時刻は分からず、最新かどうかも判断できません。")

@@ -46,7 +46,15 @@ swift build
 
 # ログに残した hex を後から解釈する（BLE 不要）
 .build/debug/bc768-probe decode --command B010 <payload hex>
+
+# 測定結果を JSON で受け取る / ファイルへ蓄積する
+.build/debug/bc768-probe measure --json | jq .
+.build/debug/bc768-probe measure --out ~/health/bc768.jsonl
 ```
+
+BC-768 は時計を持たないため、**接続下で測定したときだけ測定日時が付く**。
+本体だけで測ったデータは値は読めるが日時が付かない（`hasTimestamp: false`）。
+日時付きで残したいなら `measure` で測り、`--out` で保存しておく。
 
 BC-768 側は、実行前に本体の**「入力モード」**を押して起動しておく。
 設定/通信ボタンの長押しでは接続できてもセッションを拒否される（`ErCP` になる）。

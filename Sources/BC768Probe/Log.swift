@@ -13,6 +13,8 @@ enum LogLevel: Int, Comparable {
 /// BLE のイベントは `[TAG]` + `key=value` 行の形式で出力する。
 enum Log {
     nonisolated(unsafe) static var level: LogLevel = .info
+    /// JSON を標準出力へ出すモードでは、ログをすべて標準エラーへ回して混ざらないようにする。
+    nonisolated(unsafe) static var allToStderr = false
 
     private static let lock = NSLock()
 
@@ -51,7 +53,7 @@ enum Log {
         lock.lock()
         defer { lock.unlock() }
         let line = newline ? message + "\n" : message
-        if toStderr {
+        if toStderr || allToStderr {
             FileHandle.standardError.write(Data(line.utf8))
         } else {
             FileHandle.standardOutput.write(Data(line.utf8))

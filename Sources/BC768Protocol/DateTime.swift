@@ -32,6 +32,22 @@ public enum BC768DateTime {
         return payload
     }
 
+    /// 日数と 0.5 秒カウントから Date を作る。
+    public static func date(days: Int, halfSeconds: Int, calendar: Calendar = .current) -> Date? {
+        guard let epochDate = calendar.date(from: epoch),
+              let startOfDay = calendar.date(byAdding: .day, value: days, to: epochDate) else { return nil }
+        return startOfDay.addingTimeInterval(Double(halfSeconds) / 2)
+    }
+
+    /// TLV フィールドから測定日時を復元する。日付・時刻がともに 0 なら nil
+    /// （BC-768 は時計を持たないため、接続外で測定されたレコードは日時を持たない）。
+    public static func date(from fields: [BC768TLVField], calendar: Calendar = .current) -> Date? {
+        guard BC768Record.hasTimestamp(fields) else { return nil }
+        let days = Int(fields.first { $0.tag == 0x6A32 }?.unsignedValue ?? 0)
+        let halfSeconds = Int(fields.first { $0.tag == 0x6A33 }?.unsignedValue ?? 0)
+        return date(days: days, halfSeconds: halfSeconds, calendar: calendar)
+    }
+
     /// 9 バイト payload を日付・時刻へ戻す（ログ表示と検証用）。
     public static func decode(_ payload: Data, calendar: Calendar = .current) -> Date? {
         guard payload.count >= 9 else { return nil }

@@ -12,7 +12,8 @@ Sources/BC768Protocol/            CoreBluetooth に依存しないプロトコ�
   Protocol.swift                  メッセージ / フラグメント / チェックサム / 再構成
   DateTime.swift                  日時エンコード
   TLV.swift                       TLV パーサ（タグごとの固定長テーブル）
-  Measurement.swift               測定値のラベル付けと検算
+  Measurement.swift               測定値のラベル付け・検算・レコードの妥当性判定
+  MeasurementRecord.swift         JSON 出力用の表現
   Hex.swift                       hex 変換
 Sources/BC768Probe/
   main.swift                      CLI entrypoint・シグナル処理・run loop
@@ -21,6 +22,7 @@ Sources/BC768Probe/
   BC768Client.swift               CoreBluetooth delegate（scan / connect / discover / subscribe / handshake）
   Handshake.swift                 ハンドシェイクの手順定義
   Decode.swift                    decode コマンド（オフライン解釈）
+  JSONOutput.swift                JSON の標準出力・ファイル追記
   CharacteristicProperties.swift  Property の人間可読化
   Log.swift                       行指向ロガー
   Info.plist                      NSBluetoothAlwaysUsageDescription
@@ -103,6 +105,9 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | `--response-timeout <sec>` | 3 | handshake の応答待ちタイムアウト |
 | `--notify-char <sel>` | all | 購読する Notify（`all` / `notify1` / `notify2` / `notify3`） |
 | `--handshake-delay <sec>` | 0 | 購読完了から handshake 開始までの待ち |
+| `--json` | off | 測定結果を JSON で標準出力へ出す（ログは標準エラーへ回る） |
+| `--pretty` | off | JSON を整形して出す |
+| `--out <path>` | - | JSON を 1 行ずつ追記する（JSON Lines） |
 
 `probe` は開始時に `retrieveConnectedPeripherals(withServices:)` を確認する。Bonding 済みで macOS が既に接続を
 保持している場合、広告が出ず scan で見つからないことがあるため。
@@ -186,6 +191,43 @@ BMI      = 体重 / 身長²
 bc768-probe decode --command B010 <payload hex>
 bc768-probe decode <message hex>     # total_length から checksum まで含む全体
 ```
+
+## JSON 出力
+
+`0xB010`（測定結果）を受け取ると JSON を書き出せる。`--json` は標準出力、`--out` はファイルへの追記で、
+両方同時に指定できる。`--json` のときはログをすべて標準エラーへ回すので、`jq` などへそのまま流せる。
+
+```bash
+bc768-probe measure --json | jq .
+bc768-probe measure --out ~/health/bc768.jsonl
+bc768-probe decode --command B010 --json --pretty <payload hex>
+```
+
+構造は次のとおり。**確定している項目をトップレベルに、検算できていない推定項目を `estimated` に分けている。**
+`raw` に payload と TLV をそのまま入れてあるので、あとで解釈をやり直せる。
+
+```json
+{
+  "measuredAt": "2026-08-19T02:15:35+09:00",
+  "retrievedAt": "2026-08-19T03:30:00+09:00",
+  "hasTimestamp": true,
+  "sendPending": true,
+  "heightCm": 174, "weightKg": 88.3, "bmi": 29.2,
+  "bodyFatPercent": 24.2, "muscleMassKg": 63.5, "boneMassKg": 3.5,
+  "estimated": {
+    "basalMetabolismKcal": 1913, "metabolicAgeYears": 38,
+    "visceralFatLevel": 13.5, "bodyWaterPercent": 48.5
+  },
+  "checks": [ { "label": "BMI = 体重 / 身長^2", "computed": 29.16, "received": 29.2, "passed": true } ],
+  "raw": { "command": "0xB010", "header": "0x0001", "payload": "...", "fields": [ ... ] }
+}
+```
+
+`measuredAt` は BC-768 が返した日時から復元する。**接続外で測定されたレコードは日時を持たないため
+`null` になり、`hasTimestamp` が `false` になる**（BC-768 は時計を持たない。`docs/protocol.md` 参照）。
+その場合 `retrievedAt` しか手がかりがないので、測定時刻としては使えない。
+
+`sendPending` は直前の `0x3000` 応答が示した「タイムスタンプ付きで送信対象になるデータがあるか」。
 
 ## 安全性
 

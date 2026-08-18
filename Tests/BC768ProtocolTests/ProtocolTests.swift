@@ -274,3 +274,87 @@ final class RecordTests: XCTestCase {
         XCTAssertNil(BC768Record.hasPendingData(Data([0x00])))
     }
 }
+
+/// JSON 出力の形。値はすべて架空のもの（実測データは使わない）。
+final class MeasurementRecordTests: XCTestCase {
+    /// 架空の 0xB010 payload を組み立てる。
+    private func payload(days: UInt16, halfSeconds: UInt32) -> Data {
+        var data = Data([0x00, 0x01])                                   // ヘッダ
+        data.append(contentsOf: [0x6A, 0x32, UInt8(days >> 8), UInt8(days & 0xFF)])
+        data.append(contentsOf: [0x6A, 0x33,
+                                 UInt8((halfSeconds >> 16) & 0xFF),
+                                 UInt8((halfSeconds >> 8) & 0xFF),
+                                 UInt8(halfSeconds & 0xFF)])
+        data.append(contentsOf: [0x6A, 0x3E, 0x06, 0xD6])               // 175.0 cm
+        data.append(contentsOf: [0x60, 0x21, 0x1B, 0x58])               // 70.00 kg
+        data.append(contentsOf: [0x60, 0x56, 0x00, 0xE5])               // BMI 22.9
+        data.append(contentsOf: [0x60, 0x22, 0x00, 0xC8])               // 20.0 %
+        data.append(contentsOf: [0x60, 0x23, 0x14, 0xAA])               // 52.90 kg
+        data.append(contentsOf: [0x60, 0x29, 0x01, 0x36])               // 3.10 kg
+        data.append(contentsOf: [0x60, 0x27, 0x06, 0x40])               // 1600 kcal
+        return data
+    }
+
+    private func record(days: UInt16, halfSeconds: UInt32, sendPending: Bool?) throws -> [String: Any] {
+        let data = payload(days: days, halfSeconds: halfSeconds)
+        let parsed = BC768TLV.parse(data, headerLength: 2)
+        let record = BC768MeasurementRecord(
+            command: 0xB010,
+            payload: data,
+            parseResult: parsed,
+            sendPending: sendPending,
+            retrievedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+        let json = try record.jsonLine()
+        let object = try JSONSerialization.jsonObject(with: Data(json.utf8))
+        return try XCTUnwrap(object as? [String: Any])
+    }
+
+    func testConfirmedValuesAtTopLevel() throws {
+        // 2020-01-01 は 2000-01-01 から 7305 日。12:00:00 は 43200 秒 × 2。
+        let dict = try record(days: 7305, halfSeconds: 86400, sendPending: true)
+        XCTAssertEqual(dict["weightKg"] as? Double, 70.00)
+        XCTAssertEqual(dict["heightCm"] as? Double, 175.0)
+        XCTAssertEqual(dict["bodyFatPercent"] as? Double, 20.0)
+        XCTAssertEqual(dict["muscleMassKg"] as? Double, 52.90)
+        XCTAssertEqual(dict["boneMassKg"] as? Double, 3.10)
+        XCTAssertEqual(dict["bmi"] as? Double, 22.9)
+        XCTAssertEqual(dict["sendPending"] as? Bool, true)
+        XCTAssertEqual(dict["hasTimestamp"] as? Bool, true)
+        XCTAssertNotNil(dict["measuredAt"] as? String)
+    }
+
+    func testEstimatedValuesAreSeparated() throws {
+        let dict = try record(days: 7305, halfSeconds: 86400, sendPending: true)
+        let estimated = try XCTUnwrap(dict["estimated"] as? [String: Any])
+        XCTAssertEqual(estimated["basalMetabolismKcal"] as? Double, 1600)
+        // 推定項目はトップレベルへ出さない
+        XCTAssertNil(dict["basalMetabolismKcal"])
+    }
+
+    func testTimestampIsNullWhenZero() throws {
+        let dict = try record(days: 0, halfSeconds: 0, sendPending: false)
+        XCTAssertEqual(dict["hasTimestamp"] as? Bool, false)
+        XCTAssertTrue(dict["measuredAt"] is NSNull || dict["measuredAt"] == nil)
+        // 値そのものは読める
+        XCTAssertEqual(dict["weightKg"] as? Double, 70.00)
+    }
+
+    func testRawIsPreserved() throws {
+        let dict = try record(days: 7305, halfSeconds: 86400, sendPending: nil)
+        let raw = try XCTUnwrap(dict["raw"] as? [String: Any])
+        XCTAssertEqual(raw["command"] as? String, "0xB010")
+        XCTAssertEqual(raw["header"] as? String, "0x0001")
+        XCTAssertEqual(raw["payload"] as? String, payload(days: 7305, halfSeconds: 86400).hexString)
+        let fields = try XCTUnwrap(raw["fields"] as? [[String: Any]])
+        XCTAssertEqual(fields.count, 9)
+        XCTAssertEqual(fields.first?["tag"] as? String, "6A32")
+    }
+
+    func testChecksAreIncluded() throws {
+        let dict = try record(days: 7305, halfSeconds: 86400, sendPending: true)
+        let checks = try XCTUnwrap(dict["checks"] as? [[String: Any]])
+        XCTAssertEqual(checks.count, 2)
+        XCTAssertTrue(checks.allSatisfy { $0["passed"] as? Bool == true })
+    }
+}

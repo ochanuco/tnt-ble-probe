@@ -15,6 +15,8 @@ do {
 }
 
 Log.level = options.debug ? .debug : .info
+// JSON を標準出力へ出すときは、ログが混ざらないよう標準エラーへ回す。
+Log.allToStderr = options.json
 
 // decode は BLE も UUID 設定も使わない。
 if options.command == .decode {

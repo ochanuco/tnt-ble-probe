@@ -54,6 +54,12 @@ struct Options {
     var hexArguments: [String] = []
     /// decode で payload として解釈するときのコマンド番号。
     var decodeCommand: UInt16?
+    /// 測定結果を JSON で標準出力へ出す（ログは標準エラーへ回す）。
+    var json = false
+    /// JSON を整形して出す。
+    var jsonPretty = false
+    /// JSON を追記するファイル（JSON Lines）。
+    var outputPath: String?
 
     static let usage = """
     bc768-probe - TANITA BC-768 / macOS BLE Pairing 検証 CLI
@@ -86,6 +92,9 @@ struct Options {
                           購読完了から handshake 開始までの待ち (既定 0)
       --steps <a,b,...>   実行する handshake ステップを絞る
                           (identify,session,device-info,read-data,finish)
+      --json              測定結果を JSON で標準出力へ出す (ログは標準エラーへ)
+      --pretty            JSON を整形して出す
+      --out <path>        JSON を指定ファイルへ 1 行ずつ追記する (JSON Lines)
       --command <hex>     decode で hex を payload として扱うときのコマンド番号
                           (例: --command B010。省略時はメッセージ全体として解釈)
       -h, --help          このヘルプを表示する
@@ -182,6 +191,12 @@ enum CLI {
                     throw CLIError.invalidValue(option: arg, value: value)
                 }
                 options.steps = labels
+            case "--json":
+                options.json = true
+            case "--pretty":
+                options.jsonPretty = true
+            case "--out":
+                options.outputPath = try nextValue(for: arg)
             case "--command":
                 let value = try nextValue(for: arg)
                 guard let parsed = UInt16(value.replacingOccurrences(of: "0x", with: ""), radix: 16) else {
