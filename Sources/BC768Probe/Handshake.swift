@@ -10,7 +10,16 @@ struct HandshakeStep {
     /// 期待する応答コマンド。
     let expected: UInt16
 
-    static func sequence(with handshake: HandshakeConfig) -> [HandshakeStep] {
+    static let knownLabels = ["identify", "session", "device-info", "read-data", "finish"]
+
+    /// `labels` を渡すと、その順序どおりに絞り込む（切り分け実験用）。
+    static func sequence(with handshake: HandshakeConfig, labels: [String]? = nil) -> [HandshakeStep] {
+        let all = allSteps(with: handshake)
+        guard let labels else { return all }
+        return labels.compactMap { label in all.first { $0.label == label } }
+    }
+
+    private static func allSteps(with handshake: HandshakeConfig) -> [HandshakeStep] {
         [
             HandshakeStep(
                 label: "identify",

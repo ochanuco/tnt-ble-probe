@@ -551,7 +551,7 @@ extension BC768Client {
             shutdown(exitCode: 2)
             return
         }
-        steps = HandshakeStep.sequence(with: handshake)
+        steps = HandshakeStep.sequence(with: handshake, labels: options.steps)
         stepIndex = 0
         reassembler.reset()
 

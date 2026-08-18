@@ -45,6 +45,8 @@ struct Options {
     var notifyChar: NotifyCharSelection = .all
     /// 購読完了から handshake 開始までの待ち時間（秒）。Android のタイミングを再現するため。
     var handshakeDelay: Double = 0
+    /// 実行する handshake ステップ。nil なら既定の全ステップ。
+    var steps: [String]?
 
     static let usage = """
     bc768-probe - TANITA BC-768 / macOS BLE Pairing 検証 CLI
@@ -72,6 +74,8 @@ struct Options {
       --notify-char <sel> 購読する Notify (all | notify1 | notify2 | notify3、既定 all)
       --handshake-delay <sec>
                           購読完了から handshake 開始までの待ち (既定 0)
+      --steps <a,b,...>   実行する handshake ステップを絞る
+                          (identify,session,device-info,read-data,finish)
       -h, --help          このヘルプを表示する
 
     ENVIRONMENT:
@@ -159,6 +163,13 @@ enum CLI {
                     throw CLIError.invalidValue(option: arg, value: value)
                 }
                 options.handshakeDelay = parsed
+            case "--steps":
+                let value = try nextValue(for: arg)
+                let labels = value.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+                guard !labels.isEmpty, labels.allSatisfy({ HandshakeStep.knownLabels.contains($0) }) else {
+                    throw CLIError.invalidValue(option: arg, value: value)
+                }
+                options.steps = labels
             case "--id":
                 let value = try nextValue(for: arg)
                 guard let parsed = UUID(uuidString: value) else {
