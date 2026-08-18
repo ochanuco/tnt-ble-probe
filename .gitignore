@@ -1,0 +1,18 @@
+# --- secrets (BC-768 UUID など。git 管理外) ---
+.env
+.env.*
+!.env.example
+config/*.env
+
+# --- workbench symlink ---
+.local/
+
+# --- SwiftPM ---
+.build/
+.swiftpm/
+Package.resolved
+
+# --- macOS / editor ---
+.DS_Store
+*.xcodeproj
+*.xcworkspace
