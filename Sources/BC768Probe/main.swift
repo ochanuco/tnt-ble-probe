@@ -1,3 +1,4 @@
+import BC768BLE
 import Foundation
 
 let arguments = Array(CommandLine.arguments.dropFirst())
@@ -30,7 +31,7 @@ if options.json || options.outputPath != nil, [.scan, .probe].contains(options.c
     Log.error("\(options.command.rawValue) は測定結果を受信しないため JSON は出力されません。measure か sync を使ってください。")
 }
 
-let config: Config
+let config: BC768Configuration
 do {
     // scan は Service UUID だけで動く。probe は 5 つの Characteristic UUID も必要。
     config = try ConfigLoader.load(
@@ -45,13 +46,34 @@ do {
 
 Log.event("CONFIG", [
     ("service", config.service.uuid.uuidString),
-    ("writeChars", config.writeChars.map(\.uuid.uuidString).joined(separator: ",")),
-    ("notifyChars", config.notifyChars.map(\.uuid.uuidString).joined(separator: ",")),
+    ("writeChars", config.writeChars.map { $0.uuid.uuidString }.joined(separator: ",")),
+    ("notifyChars", config.notifyChars.map { $0.uuid.uuidString }.joined(separator: ",")),
 ], level: .debug)
 Log.info("設定済み UUID: SERVICE_UUID + write \(config.writeChars.count) 件 / notify \(config.notifyChars.count) 件")
 
 let bleQueue = DispatchQueue(label: "com.ochanuco.bc768-probe.ble")
-let client = BC768Client(config: config, options: options, queue: bleQueue)
+let capturedOptions = options
+
+/// セッション層のイベントをログと JSON へ流す。表示の責任は CLI 側が持つ。
+let session = BC768Session(configuration: config, options: options.sessionOptions, queue: bleQueue) { event in
+    switch event {
+    case let .log(tag, fields, level):
+        Log.event(tag, fields, level: LogLevel(level))
+    case let .message(text, level):
+        if level == .error { Log.error(text) } else { Log.info(text) }
+    case .phase:
+        // 進み具合はログから読めるので CLI では使わない（GUI 用）。
+        break
+    case let .record(record):
+        JSONOutput.emit(record, options: capturedOptions)
+    case let .completed(completion):
+        Log.info("bye")
+        switch completion {
+        case .finished, .cancelled: exit(0)
+        case .failed: exit(1)
+        }
+    }
+}
 
 // Ctrl+C で Notify 解除 → disconnect → cleanup を経て終了する。
 signal(SIGINT, SIG_IGN)
@@ -62,9 +84,10 @@ for source in [sigintSource, sigtermSource] {
     source.setEventHandler {
         Log.info("")
         Log.info("シグナルを受信しました。終了処理を行います。")
-        client.shutdown(exitCode: 0)
+        session.cancel()
     }
     source.resume()
 }
 
+session.start()
 dispatchMain()

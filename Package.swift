@@ -10,9 +10,16 @@ let package = Package(
     targets: [
         // CoreBluetooth に依存しない BC-768 独自プロトコル層。
         .target(name: "BC768Protocol", path: "Sources/BC768Protocol"),
+        // CoreBluetooth を使うセッション層。CLI と GUI の両方から使う。
+        .target(
+            name: "BC768BLE",
+            dependencies: ["BC768Protocol"],
+            path: "Sources/BC768BLE",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .executableTarget(
             name: "BC768Probe",
-            dependencies: ["BC768Protocol"],
+            dependencies: ["BC768Protocol", "BC768BLE"],
             path: "Sources/BC768Probe",
             exclude: ["Info.plist"],
             swiftSettings: [.swiftLanguageMode(.v5)],

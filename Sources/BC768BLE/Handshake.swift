@@ -4,7 +4,7 @@ import Foundation
 
 /// ハンドシェイクの 1 ステップ。送る内容はすべて Android HCI キャプチャで観測済みのもので、
 /// 推測した payload は含まない。詳細は docs/protocol.md を参照。
-struct HandshakeStep {
+public struct HandshakeStep {
     let label: String
     let message: BC768Message
     /// 期待する応答コマンド。
@@ -19,37 +19,37 @@ struct HandshakeStep {
         self.timeout = timeout
     }
 
-    static let knownLabels = [
+    public static let knownLabels = [
         "identify", "session", "device-info", "read-data",
         "measure", "complete", "result", "finish",
     ]
 
     /// 既定のハンドシェイク（測定は行わない）。
-    static let defaultLabels = ["identify", "session", "device-info", "read-data", "finish"]
+    public static let defaultLabels = ["identify", "session", "device-info", "read-data", "finish"]
     /// 測定は開始せず、BC-768 が保持しているデータの有無を確認して取得する流れ。
-    static let syncLabels = [
+    public static let syncLabels = [
         "identify", "session", "device-info", "read-data",
         "complete", "result", "finish",
     ]
     /// 測定まで通す一連の流れ。HCI キャプチャで測定に成功したセッションと同じ順序。
-    static let measureLabels = [
+    public static let measureLabels = [
         "identify", "session", "device-info", "read-data",
         "measure", "complete", "result", "finish",
     ]
 
-    static func sequence(with handshake: HandshakeConfig, labels: [String]?, now: Date = Date()) -> [HandshakeStep] {
+    static func sequence(with handshake: BC768Configuration, labels: [String]?, now: Date = Date()) -> [HandshakeStep] {
         let all = allSteps(with: handshake, now: now)
         let wanted = labels ?? defaultLabels
         return wanted.compactMap { label in all.first { $0.label == label } }
     }
 
-    private static func allSteps(with handshake: HandshakeConfig, now: Date) -> [HandshakeStep] {
+    private static func allSteps(with handshake: BC768Configuration, now: Date) -> [HandshakeStep] {
         // 0x0010 は日時設定。既定では現在時刻から組み立てる（固定値を送ると古い日時になる）。
         let sessionPayload = handshake.sessionPayload ?? BC768DateTime.encode(now) ?? Data()
         return [
             HandshakeStep(
                 label: "identify",
-                message: BC768Message(command: 0x0003, payload: Data(handshake.clientID.utf8)),
+                message: BC768Message(command: 0x0003, payload: Data((handshake.clientID ?? "").utf8)),
                 expected: 0x8003
             ),
             HandshakeStep(
@@ -94,7 +94,7 @@ struct HandshakeStep {
     }
 }
 
-extension BC768Client {
+extension BC768Session {
     /// Android と同じ 20 バイト固定でフラグメント化する。
     /// BC-768 が大きいフラグメントを受け付けるかは未検証のため、MTU が広がっても広げない。
     static let fragmentSize = 20

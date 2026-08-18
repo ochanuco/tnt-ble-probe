@@ -1,3 +1,4 @@
+import BC768BLE
 import Foundation
 
 enum Command: String {
@@ -7,21 +8,6 @@ enum Command: String {
     case measure
     case sync
     case decode
-}
-
-/// handshake の送信先 Characteristic。実機で確かめるまで確定できないため選べるようにしてある。
-enum WriteCharSelection: String {
-    case auto
-    case write1
-    case write2
-}
-
-/// Notify 購読の対象。Android は 1 本しか購読していないため、揃えられるようにする。
-enum NotifyCharSelection: String {
-    case all
-    case notify1
-    case notify2
-    case notify3
 }
 
 struct Options {
@@ -42,11 +28,11 @@ struct Options {
     /// handshake / measure / sync は手順が完走した時点で終了する。
     var waitSeconds: Double?
     /// handshake の送信先。auto は WRITE_CHAR_1 を試し、応答がなければ WRITE_CHAR_2 へ切り替える。
-    var writeChar: WriteCharSelection = .auto
+    var writeChar: BC768WriteCharSelection = .auto
     /// handshake の応答待ちタイムアウト秒。
     var responseTimeout: Double = 3
     /// 購読対象の Notify Characteristic。
-    var notifyChar: NotifyCharSelection = .all
+    var notifyChar: BC768NotifyCharSelection = .all
     /// 購読完了から handshake 開始までの待ち時間（秒）。Android のタイミングを再現するため。
     var handshakeDelay: Double = 0
     /// 実行する handshake ステップ。nil なら既定の全ステップ。
@@ -113,6 +99,35 @@ struct Options {
     """
 }
 
+extension Options {
+    /// BLE セッション層へ渡す設定へ変換する。
+    var sessionOptions: BC768SessionOptions {
+        let mode: BC768SessionMode
+        switch command {
+        case .scan: mode = .scan
+        case .probe: mode = .probe
+        case .handshake: mode = .handshake
+        case .measure: mode = .measure
+        case .sync: mode = .sync
+        case .decode: mode = .probe   // decode は BLE を使わない
+        }
+        var result = BC768SessionOptions(mode: mode)
+        result.noFilter = noFilter
+        result.scanTimeout = scanTimeout
+        result.noSubscribe = noSubscribe
+        result.readAll = readAll
+        result.peripheralID = peripheralID
+        result.waitSeconds = waitSeconds
+        result.writeChar = writeChar
+        result.responseTimeout = responseTimeout
+        result.notifyChar = notifyChar
+        result.handshakeDelay = handshakeDelay
+        result.steps = steps
+        result.verbose = debug
+        return result
+    }
+}
+
 enum CLIError: Error, CustomStringConvertible {
     case unknownArgument(String)
     case missingValue(String)
@@ -171,7 +186,7 @@ enum CLI {
                 options.waitSeconds = parsed
             case "--write-char":
                 let value = try nextValue(for: arg)
-                guard let parsed = WriteCharSelection(rawValue: value) else {
+                guard let parsed = BC768WriteCharSelection(rawValue: value) else {
                     throw CLIError.invalidValue(option: arg, value: value)
                 }
                 options.writeChar = parsed
@@ -183,7 +198,7 @@ enum CLI {
                 options.responseTimeout = parsed
             case "--notify-char":
                 let value = try nextValue(for: arg)
-                guard let parsed = NotifyCharSelection(rawValue: value) else {
+                guard let parsed = BC768NotifyCharSelection(rawValue: value) else {
                     throw CLIError.invalidValue(option: arg, value: value)
                 }
                 options.notifyChar = parsed

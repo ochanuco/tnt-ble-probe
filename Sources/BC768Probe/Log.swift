@@ -1,3 +1,4 @@
+import BC768BLE
 import BC768Protocol
 import Foundation
 
@@ -7,6 +8,15 @@ enum LogLevel: Int, Comparable {
     case debug = 2
 
     static func < (lhs: LogLevel, rhs: LogLevel) -> Bool { lhs.rawValue < rhs.rawValue }
+
+    /// セッション層のレベルから変換する。
+    init(_ level: BC768LogLevel) {
+        switch level {
+        case .error: self = .error
+        case .info: self = .info
+        case .debug: self = .debug
+        }
+    }
 }
 
 /// 観測可能性と再現性を最優先するための、単純な行指向ロガー。
@@ -59,15 +69,4 @@ enum Log {
             FileHandle.standardOutput.write(Data(line.utf8))
         }
     }
-}
-
-extension NSError {
-    var logDescription: String {
-        "\(localizedDescription) (domain=\(domain) code=\(code))"
-    }
-}
-
-func describeError(_ error: Error?) -> String? {
-    guard let error else { return nil }
-    return (error as NSError).logDescription
 }

@@ -4,9 +4,9 @@ import Foundation
 
 /// CoreBluetooth 固有の処理をここへ閉じ込め、将来 Go へ移植しやすい粒度に留める。
 /// プロトコルを推測した自動処理は行わない。既定動作は Scan / Connect / Discover / Subscribe / Log まで。
-final class BC768Client: NSObject {
-    private let config: Config
-    private let options: Options
+public final class BC768Session: NSObject {
+    private let config: BC768Configuration
+    private let options: BC768SessionOptions
     private let queue: DispatchQueue
     private var central: CBCentralManager!
 
@@ -31,28 +31,66 @@ final class BC768Client: NSObject {
     /// 直近の 0x3000 応答が示した「送信対象データの有無」。0xB010 の記録に添える。
     private var lastSendPending: Bool?
 
-    init(config: Config, options: Options, queue: DispatchQueue) {
-        self.config = config
+    private let onEvent: @Sendable (BC768Event) -> Void
+    private var didComplete = false
+
+    /// セッションを組み立てる。`start()` を呼ぶまで BLE には触れない。
+    /// `onEvent` は `queue` 上で呼ばれる。UI から使う場合は呼び出し側でメインスレッドへ移すこと。
+    public init(
+        configuration: BC768Configuration,
+        options: BC768SessionOptions,
+        queue: DispatchQueue = DispatchQueue(label: "com.ochanuco.bc768.session"),
+        onEvent: @escaping @Sendable (BC768Event) -> Void
+    ) {
+        self.config = configuration
         self.options = options
         self.queue = queue
+        self.onEvent = onEvent
         super.init()
-        self.central = CBCentralManager(delegate: self, queue: queue)
     }
+
+    /// BLE の利用を開始する。状態が整い次第 scan / 接続へ進む。
+    public func start() {
+        queue.async { [weak self] in
+            guard let self, self.central == nil else { return }
+            self.central = CBCentralManager(delegate: self, queue: self.queue)
+        }
+    }
+
+    /// 呼び出し側から停止する。後片付けを済ませてから `.completed(.cancelled)` を流す。
+    public func cancel() {
+        finish(.cancelled)
+    }
+
+    // MARK: - イベント発行
+
+    private func emit(_ event: BC768Event) {
+        onEvent(event)
+    }
+
+    func logEvent(_ tag: String, _ fields: [(String, String?)], level: BC768LogLevel = .info) {
+        emit(.log(tag: tag, fields: fields, level: level))
+    }
+
+    func logInfo(_ message: String) { emit(.message(message, .info)) }
+    func logError(_ message: String) { emit(.message(message, .error)) }
 
     // MARK: - lifecycle
 
-    /// Ctrl+C / 待機終了時のクリーンアップ。Notify 解除 → disconnect → central cleanup。
-    func shutdown(exitCode: Int32) {
+    /// 後片付けをして終了する。Notify 解除 → disconnect → central cleanup。
+    func finish(_ completion: BC768Completion) {
         queue.async { [weak self] in
             guard let self, !self.isTerminating else { return }
             self.isTerminating = true
-            Log.event("SHUTDOWN", [("reason", exitCode == 0 ? "requested" : "error")])
+            let isNormal: Bool
+            if case .failed = completion { isNormal = false } else { isNormal = true }
+            logEvent("SHUTDOWN", [("reason", isNormal ? "requested" : "error")])
 
             if let peripheral = self.target {
                 // 既に切断済みなら CCCD 書き込みは無意味なので行わない。
                 for named in self.targetNotifyChars where peripheral.state == .connected {
                     if let characteristic = self.discovered[named.uuid], characteristic.isNotifying {
-                        Log.event("UNSUBSCRIBE", [
+                        logEvent("UNSUBSCRIBE", [
                             ("logical", named.logicalName),
                             ("uuid", named.uuid.uuidString),
                         ])
@@ -60,17 +98,18 @@ final class BC768Client: NSObject {
                     }
                 }
                 if peripheral.state == .connected || peripheral.state == .connecting {
-                    Log.event("DISCONNECTING", [("id", peripheral.identifier.uuidString)])
-                    self.central.cancelPeripheralConnection(peripheral)
+                    logEvent("DISCONNECTING", [("id", peripheral.identifier.uuidString)])
+                    self.central?.cancelPeripheralConnection(peripheral)
                 }
             }
-            if self.central.isScanning {
-                self.central.stopScan()
+            if self.central?.isScanning == true {
+                self.central?.stopScan()
             }
-            // disconnect 完了コールバックを少し待ってから終了する。
+            // disconnect 完了コールバックを少し待ってから終了を通知する。
             self.queue.asyncAfter(deadline: .now() + 0.7) {
-                Log.info("bye")
-                exit(exitCode)
+                guard !self.didComplete else { return }
+                self.didComplete = true
+                self.emit(.completed(completion))
             }
         }
     }
@@ -78,8 +117,9 @@ final class BC768Client: NSObject {
     // MARK: - scan
 
     private func startScan() {
+        emit(.phase(.scanning))
         let services: [CBUUID]? = options.noFilter ? nil : [config.service.uuid]
-        Log.event("SCAN_START", [
+        logEvent("SCAN_START", [
             ("mode", options.noFilter ? "no-filter" : "service-filter"),
             ("service", options.noFilter ? nil : config.service.uuid.uuidString),
             ("timeout", options.scanTimeout == 0 ? "none" : String(format: "%.0f", options.scanTimeout)),
@@ -93,12 +133,12 @@ final class BC768Client: NSObject {
             guard let self, !self.isTerminating else { return }
             guard self.target == nil else { return }
             self.central.stopScan()
-            Log.event("SCAN_TIMEOUT", [("found", String(self.seenPeripherals.count))])
-            if self.options.command == .scan {
-                self.shutdown(exitCode: self.seenPeripherals.isEmpty ? 1 : 0)
+            logEvent("SCAN_TIMEOUT", [("found", String(self.seenPeripherals.count))])
+            if self.options.mode == .scan {
+                self.finish(self.seenPeripherals.isEmpty ? .failed("対象が見つかりませんでした") : .finished)
             } else {
-                Log.error("対象 Peripheral を発見できませんでした。--no-filter や --id を検討してください。")
-                self.shutdown(exitCode: 1)
+                logError("対象 Peripheral を発見できませんでした。--no-filter や --id を検討してください。")
+                self.finish(.failed("対象 Peripheral を発見できませんでした"))
             }
         }
         scanTimeoutItem = item
@@ -110,11 +150,11 @@ final class BC768Client: NSObject {
         if let id = options.peripheralID {
             let peripherals = central.retrievePeripherals(withIdentifiers: [id])
             guard let peripheral = peripherals.first else {
-                Log.error("指定された Peripheral 識別子が見つかりません: \(id.uuidString)")
-                shutdown(exitCode: 1)
+                logError("指定された Peripheral 識別子が見つかりません: \(id.uuidString)")
+                finish(.failed("指定された Peripheral 識別子が見つかりません"))
                 return nil
             }
-            Log.event("RETRIEVED", [
+            logEvent("RETRIEVED", [
                 ("source", "identifier"),
                 ("id", peripheral.identifier.uuidString),
                 ("name", peripheral.name),
@@ -124,7 +164,7 @@ final class BC768Client: NSObject {
         }
         let connected = central.retrieveConnectedPeripherals(withServices: [config.service.uuid])
         if let peripheral = connected.first {
-            Log.event("RETRIEVED", [
+            logEvent("RETRIEVED", [
                 ("source", "already-connected"),
                 ("id", peripheral.identifier.uuidString),
                 ("name", peripheral.name),
@@ -141,7 +181,8 @@ final class BC768Client: NSObject {
         if central.isScanning { central.stopScan() }
         target = peripheral
         peripheral.delegate = self
-        Log.event("CONNECTING", [
+        emit(.phase(.connecting))
+        logEvent("CONNECTING", [
             ("id", peripheral.identifier.uuidString),
             ("name", peripheral.name),
         ])
@@ -151,8 +192,8 @@ final class BC768Client: NSObject {
 
 // MARK: - CBCentralManagerDelegate
 
-extension BC768Client: CBCentralManagerDelegate {
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+extension BC768Session: CBCentralManagerDelegate {
+    public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         let stateName: String
         switch central.state {
         case .poweredOn: stateName = "poweredOn"
@@ -163,27 +204,27 @@ extension BC768Client: CBCentralManagerDelegate {
         case .unknown: stateName = "unknown"
         @unknown default: stateName = "unknown(\(central.state.rawValue))"
         }
-        Log.event("CENTRAL_STATE", [("state", stateName)])
+        logEvent("CENTRAL_STATE", [("state", stateName)])
 
         switch central.state {
         case .poweredOn:
-            if options.command != .scan, let known = resolveAlreadyKnownPeripheral() {
+            if options.mode != .scan, let known = resolveAlreadyKnownPeripheral() {
                 connect(known)
-            } else if options.peripheralID != nil, options.command == .scan {
-                Log.error("--id は probe コマンドでのみ使用できます")
-                shutdown(exitCode: 2)
+            } else if options.peripheralID != nil, options.mode == .scan {
+                logError("--id は scan では使用できません")
+                finish(.failed("--id は scan では使用できません"))
             } else {
                 startScan()
             }
         case .poweredOff:
-            Log.error("Bluetooth がオフです。システム設定で有効にしてください。")
-            shutdown(exitCode: 1)
+            logError("Bluetooth がオフです。システム設定で有効にしてください。")
+            finish(.failed("Bluetooth がオフです"))
         case .unauthorized:
-            Log.error("Bluetooth の使用が許可されていません。システム設定 > プライバシーとセキュリティ > Bluetooth で、実行中のターミナルアプリを許可してください。")
-            shutdown(exitCode: 1)
+            logError("Bluetooth の使用が許可されていません。システム設定 > プライバシーとセキュリティ > Bluetooth で許可してください。")
+            finish(.failed("Bluetooth の使用が許可されていません"))
         case .unsupported:
-            Log.error("この Mac は BLE をサポートしていません。")
-            shutdown(exitCode: 1)
+            logError("この Mac は BLE をサポートしていません。")
+            finish(.failed("この Mac は BLE をサポートしていません"))
         case .resetting, .unknown:
             break
         @unknown default:
@@ -191,7 +232,7 @@ extension BC768Client: CBCentralManagerDelegate {
         }
     }
 
-    func centralManager(
+    public func centralManager(
         _ central: CBCentralManager,
         didDiscover peripheral: CBPeripheral,
         advertisementData: [String: Any],
@@ -203,7 +244,7 @@ extension BC768Client: CBCentralManagerDelegate {
         let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data]
         let isNew = seenPeripherals.insert(peripheral.identifier).inserted
 
-        Log.event("SCAN", [
+        logEvent("SCAN", [
             ("name", peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String),
             ("id", peripheral.identifier.uuidString),
             ("rssi", RSSI.stringValue),
@@ -216,7 +257,7 @@ extension BC768Client: CBCentralManagerDelegate {
             ("matchesServiceUUID", advertisedServices.contains(config.service.uuid) ? "true" : "false"),
         ], level: isNew ? .info : .debug)
 
-        guard options.command != .scan, target == nil else { return }
+        guard options.mode != .scan, target == nil else { return }
         // 名前ではなく Service UUID で識別する。
         // --no-filter 時に Service UUID を広告しない機体は、--id 指定で接続する運用とする。
         let matches = advertisedServices.contains(config.service.uuid)
@@ -226,56 +267,57 @@ extension BC768Client: CBCentralManagerDelegate {
         connect(peripheral)
     }
 
-    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        Log.event("CONNECTED", [
+    public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        logEvent("CONNECTED", [
             ("id", peripheral.identifier.uuidString),
             ("name", peripheral.name),
         ])
-        Log.event("DISCOVER_SERVICES", [("filter", "none (all services)")])
+        emit(.phase(.discovering))
+        logEvent("DISCOVER_SERVICES", [("filter", "none (all services)")])
         peripheral.discoverServices(nil)
     }
 
-    func centralManager(
+    public func centralManager(
         _ central: CBCentralManager,
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
-        Log.event("FAILED", [
+        logEvent("FAILED", [
             ("id", peripheral.identifier.uuidString),
             ("error", describeError(error)),
         ], level: .error)
-        shutdown(exitCode: 1)
+        finish(.failed("接続に失敗しました"))
     }
 
-    func centralManager(
+    public func centralManager(
         _ central: CBCentralManager,
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
-        Log.event("DISCONNECTED", [
+        logEvent("DISCONNECTED", [
             ("id", peripheral.identifier.uuidString),
             ("error", describeError(error)),
             ("hint", disconnectHint(for: error)),
         ])
         guard !isTerminating else { return }
-        Log.info("Peripheral から切断されました。再接続は行いません（Bonding 検証はコマンドを再実行して確認してください）。")
-        shutdown(exitCode: error == nil ? 0 : 1)
+        logInfo("Peripheral から切断されました。再接続は行いません（Bonding 検証はコマンドを再実行して確認してください）。")
+        finish(error == nil ? .finished : .failed("Peripheral から切断されました"))
     }
 }
 
 // MARK: - CBPeripheralDelegate
 
-extension BC768Client: CBPeripheralDelegate {
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+extension BC768Session: CBPeripheralDelegate {
+    public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error {
-            Log.event("SERVICE_DISCOVERY_ERROR", [("error", describeError(error))], level: .error)
-            shutdown(exitCode: 1)
+            logEvent("SERVICE_DISCOVERY_ERROR", [("error", describeError(error))], level: .error)
+            finish(.failed("Service Discovery に失敗しました"))
             return
         }
         let services = peripheral.services ?? []
-        Log.event("SERVICES", [("count", String(services.count))])
+        logEvent("SERVICES", [("count", String(services.count))])
         for service in services {
-            Log.event("SERVICE", [
+            logEvent("SERVICE", [
                 ("uuid", service.uuidString),
                 ("logical", config.logicalName(for: service.uuid)),
                 ("isPrimary", service.isPrimary ? "true" : "false"),
@@ -283,35 +325,35 @@ extension BC768Client: CBPeripheralDelegate {
         }
 
         guard let targetService = services.first(where: { $0.uuid == config.service.uuid }) else {
-            Log.error("SERVICE_UUID に一致する Service が見つかりませんでした。")
-            shutdown(exitCode: 1)
+            logError("SERVICE_UUID に一致する Service が見つかりませんでした。")
+            finish(.failed("SERVICE_UUID に一致する Service がありません"))
             return
         }
-        Log.event("DISCOVER_CHARACTERISTICS", [
+        logEvent("DISCOVER_CHARACTERISTICS", [
             ("service", targetService.uuidString),
             ("logical", config.service.logicalName),
             ("filter", "none (all characteristics)"),
         ])
         peripheral.discoverCharacteristics(nil, for: targetService)
 
-        if Log.level >= .debug {
+        if options.verbose {
             for service in services where service.uuid != config.service.uuid {
                 peripheral.discoverCharacteristics(nil, for: service)
             }
         }
     }
 
-    func peripheral(
+    public func peripheral(
         _ peripheral: CBPeripheral,
         didDiscoverCharacteristicsFor service: CBService,
         error: Error?
     ) {
         if let error {
-            Log.event("CHARACTERISTIC_DISCOVERY_ERROR", [
+            logEvent("CHARACTERISTIC_DISCOVERY_ERROR", [
                 ("service", service.uuidString),
                 ("error", describeError(error)),
             ], level: .error)
-            if service.uuid == config.service.uuid { shutdown(exitCode: 1) }
+            if service.uuid == config.service.uuid { finish(.failed("Characteristic Discovery に失敗しました")) }
             return
         }
 
@@ -319,7 +361,7 @@ extension BC768Client: CBPeripheralDelegate {
         let isTargetService = service.uuid == config.service.uuid
         for characteristic in characteristics {
             if isTargetService { discovered[characteristic.uuid] = characteristic }
-            Log.event("CHARACTERISTIC", [
+            logEvent("CHARACTERISTIC", [
                 ("service", service.uuidString),
                 ("uuid", characteristic.uuidString),
                 ("logical", config.logicalName(for: characteristic.uuid)),
@@ -333,7 +375,7 @@ extension BC768Client: CBPeripheralDelegate {
         guard isTargetService else { return }
         verifyConfiguredCharacteristics()
         if options.noSubscribe {
-            Log.info("--no-subscribe が指定されているため Notify 購読を行いません（Pairing 検証 Case A）。")
+            logInfo("--no-subscribe が指定されているため Notify 購読を行いません（Pairing 検証 Case A）。")
         } else {
             subscribeNotifications(on: peripheral)
         }
@@ -343,14 +385,14 @@ extension BC768Client: CBPeripheralDelegate {
         announceWaiting()
     }
 
-    func peripheral(
+    public func peripheral(
         _ peripheral: CBPeripheral,
         didDiscoverDescriptorsFor characteristic: CBCharacteristic,
         error: Error?
     ) {
         pendingDescriptorDiscovery = max(0, pendingDescriptorDiscovery - 1)
         let descriptors = characteristic.descriptors ?? []
-        Log.event("DESCRIPTORS", [
+        logEvent("DESCRIPTORS", [
             ("uuid", characteristic.uuidString),
             ("logical", config.logicalName(for: characteristic.uuid)),
             ("count", String(descriptors.count)),
@@ -359,12 +401,12 @@ extension BC768Client: CBPeripheralDelegate {
         ], level: .debug)
     }
 
-    func peripheral(
+    public func peripheral(
         _ peripheral: CBPeripheral,
         didUpdateNotificationStateFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        Log.event("NOTIFY_STATE", [
+        logEvent("NOTIFY_STATE", [
             ("uuid", characteristic.uuidString),
             ("logical", config.logicalName(for: characteristic.uuid)),
             ("enabled", characteristic.isNotifying ? "true" : "false"),
@@ -374,10 +416,10 @@ extension BC768Client: CBPeripheralDelegate {
         if error == nil, characteristic.isNotifying {
             subscribedCount += 1
             if subscribedCount == targetNotifyChars.count {
-                Log.info("Notify 購読が \(subscribedCount) 件すべて有効になりました。")
-                if [.handshake, .measure, .sync].contains(options.command) {
+                logInfo("Notify 購読が \(subscribedCount) 件すべて有効になりました。")
+                if [.handshake, .measure, .sync].contains(options.mode) {
                     if options.handshakeDelay > 0 {
-                        Log.info("\(options.handshakeDelay) 秒待ってから handshake を開始します。")
+                        logInfo("\(options.handshakeDelay) 秒待ってから handshake を開始します。")
                         queue.asyncAfter(deadline: .now() + options.handshakeDelay) { [weak self] in
                             guard let self, !self.isTerminating else { return }
                             self.startHandshake(on: peripheral)
@@ -386,19 +428,19 @@ extension BC768Client: CBPeripheralDelegate {
                         startHandshake(on: peripheral)
                     }
                 } else {
-                    Log.info("macOS の Pairing ダイアログが表示された場合は、そのまま操作してください（CLI は待機し続けます）。")
+                    logInfo("macOS の Pairing ダイアログが表示された場合は、そのまま操作してください（CLI は待機し続けます）。")
                 }
             }
         }
     }
 
-    func peripheral(
+    public func peripheral(
         _ peripheral: CBPeripheral,
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
         if let error {
-            Log.event("READ_ERROR", [
+            logEvent("READ_ERROR", [
                 ("uuid", characteristic.uuidString),
                 ("logical", config.logicalName(for: characteristic.uuid)),
                 ("error", describeError(error)),
@@ -407,13 +449,13 @@ extension BC768Client: CBPeripheralDelegate {
         }
         let data = characteristic.value ?? Data()
         // payload は加工せず hex を正として記録する。
-        Log.event("NOTIFY", [
+        logEvent("NOTIFY", [
             ("uuid", characteristic.uuidString),
             ("logical", config.logicalName(for: characteristic.uuid)),
             ("length", String(data.count)),
             ("hex", data.hexString),
         ])
-        Log.event("NOTIFY_DETAIL", [
+        logEvent("NOTIFY_DETAIL", [
             ("uuid", characteristic.uuidString),
             ("dec", data.decimalBytes),
             ("ascii", data.asciiPreview),
@@ -421,10 +463,10 @@ extension BC768Client: CBPeripheralDelegate {
 
         guard let assembled = reassembler.append(data) else { return }
         guard let (message, checksumValid) = BC768Message.decode(assembled) else {
-            Log.event("RX_MESSAGE_INVALID", [("raw", assembled.hexString)], level: .error)
+            logEvent("RX_MESSAGE_INVALID", [("raw", assembled.hexString)], level: .error)
             return
         }
-        Log.event("RX_MESSAGE", [
+        logEvent("RX_MESSAGE", [
             ("command", String(format: "0x%04X", message.command)),
             ("length", String(message.payload.count)),
             ("checksum", checksumValid ? "ok" : "INVALID"),
@@ -439,7 +481,7 @@ extension BC768Client: CBPeripheralDelegate {
 
 // MARK: - phase helpers
 
-private extension BC768Client {
+private extension BC768Session {
     /// 設定された Characteristic UUID が実際に存在し、期待する Property を持つか検証する。
     func verifyConfiguredCharacteristics() {
         var missing: [String] = []
@@ -462,7 +504,7 @@ private extension BC768Client {
             check(named, expected: [.notify, .indicate], expectedLabel: "notify/indicate")
         }
 
-        Log.event("VERIFY", [
+        logEvent("VERIFY", [
             ("configured", String(config.allCharacteristics.count)),
             ("found", String(config.allCharacteristics.count - missing.count)),
             ("missing", missing.isEmpty ? nil : missing.joined(separator: ",")),
@@ -470,9 +512,9 @@ private extension BC768Client {
         ], level: missing.isEmpty ? .info : .error)
 
         if missing.isEmpty {
-            Log.info("Phase 1: SERVICE_UUID と設定済み 5 Characteristic をすべて発見しました。")
+            logInfo("Phase 1: SERVICE_UUID と設定済み 5 Characteristic をすべて発見しました。")
         } else {
-            Log.error("Phase 1 未達: \(missing.joined(separator: ",")) が見つかりません。")
+            logError("Phase 1 未達: \(missing.joined(separator: ",")) が見つかりません。")
         }
     }
 
@@ -487,16 +529,17 @@ private extension BC768Client {
     }
 
     func subscribeNotifications(on peripheral: CBPeripheral) {
+        emit(.phase(.subscribing))
         for named in targetNotifyChars {
             guard let characteristic = discovered[named.uuid] else {
-                Log.event("SUBSCRIBE_SKIP", [
+                logEvent("SUBSCRIBE_SKIP", [
                     ("logical", named.logicalName),
                     ("uuid", named.uuid.uuidString),
                     ("reason", "characteristic not found"),
                 ], level: .error)
                 continue
             }
-            Log.event("SUBSCRIBE", [
+            logEvent("SUBSCRIBE", [
                 ("logical", named.logicalName),
                 ("uuid", named.uuid.uuidString),
                 ("requested", "true"),
@@ -509,7 +552,7 @@ private extension BC768Client {
     /// Write は仕様どおり一切行わない。
     func readReadableCharacteristics(on peripheral: CBPeripheral) {
         for (uuid, characteristic) in discovered where characteristic.properties.contains(.read) {
-            Log.event("READ_REQUEST", [
+            logEvent("READ_REQUEST", [
                 ("uuid", uuid.uuidString),
                 ("logical", config.logicalName(for: uuid)),
             ])
@@ -534,22 +577,23 @@ private extension BC768Client {
 
     func announceWaiting() {
         if let wait = options.waitSeconds, wait > 0 {
-            Log.info("待機します（\(Int(wait)) 秒）。Ctrl+C でいつでも終了できます。")
+            logInfo("待機します（\(Int(wait)) 秒）。Ctrl+C でいつでも終了できます。")
             queue.asyncAfter(deadline: .now() + wait) { [weak self] in
-                Log.info("待機時間が経過しました。")
-                self?.shutdown(exitCode: 0)
+                guard let self else { return }
+                self.logInfo("待機時間が経過しました。")
+                self.finish(.finished)
             }
-        } else if [.handshake, .measure, .sync].contains(options.command) {
-            Log.info("手順を進めます。完走した時点で終了します（--wait 0 で待機し続けられます）。")
+        } else if [.handshake, .measure, .sync].contains(options.mode) {
+            logInfo("手順を進めます。完走した時点で終了します（--wait 0 で待機し続けられます）。")
         } else {
-            Log.info("待機中。Notify を受信するとログに出力します。終了は Ctrl+C。")
+            logInfo("待機中。Notify を受信するとログに出力します。終了は Ctrl+C。")
         }
     }
 }
 
 // MARK: - TLV デコード
 
-extension BC768Client {
+extension BC768Session {
     /// 測定結果 (0xB010) と設定応答 (0x9000 / 0x9002) の payload を TLV として解釈して出力する。
     /// ラベルの大半は推定なので、raw hex も必ず併記する。
     func decodeIfMeasurement(_ message: BC768Message) {
@@ -560,7 +604,7 @@ extension BC768Client {
         default: return
         }
         let result = BC768TLV.parse(message.payload, headerLength: headerLength)
-        Log.event("DECODED", [
+        logEvent("DECODED", [
             ("command", String(format: "0x%04X", message.command)),
             // ヘッダが 2 バイトあるのは 0xB010 だけ。他は表示しても意味がない。
             ("header", message.command == 0xB010
@@ -573,13 +617,13 @@ extension BC768Client {
             }()),
         ])
         for field in result.fields {
-            Log.info("  " + BC768Field.describe(field))
+            logInfo("  " + BC768Field.describe(field))
         }
         if case let .partial(_, unparsed) = result, !unparsed.isEmpty {
-            Log.info("  未解釈の残り: \(unparsed.hexString)")
+            logInfo("  未解釈の残り: \(unparsed.hexString)")
         }
         for check in BC768Consistency.checks(for: result.fields) {
-            Log.info("  [検算] " + check.description)
+            logInfo("  [検算] " + check.description)
         }
         if message.command == 0xB010 {
             let record = BC768MeasurementRecord(
@@ -589,29 +633,30 @@ extension BC768Client {
                 sendPending: lastSendPending,
                 retrievedAt: Date()
             )
-            JSONOutput.emit(record, options: options)
+            emit(.record(record))
         }
         // BC-768 は取り出せるデータが無くても 0x3010 に応答し、前回値をそのまま返す。
         if message.command == 0xB010, !BC768Record.hasTimestamp(result.fields) {
-            Log.error("このレコードは日付・時刻がゼロです。接続外で測定された結果か、既に引き取り済みの残留値です。測定時刻は分からず、最新かどうかも判断できません。")
+            logError("このレコードは日付・時刻がゼロです。接続外で測定された結果か、既に引き取り済みの残留値です。測定時刻は分からず、最新かどうかも判断できません。")
         }
     }
 }
 
 // MARK: - handshake
 
-extension BC768Client {
+extension BC768Session {
     func startHandshake(on peripheral: CBPeripheral) {
-        guard let handshake = config.handshake else {
-            Log.error("handshake に必要な設定がありません。")
-            shutdown(exitCode: 2)
+        guard config.clientID != nil else {
+            logError("handshake に必要な設定（クライアント識別子）がありません。")
+            finish(.failed("handshake に必要な設定がありません"))
             return
         }
+        let handshake = config
         let labels: [String]
         if let explicit = options.steps {
             labels = explicit
         } else {
-            switch options.command {
+            switch options.mode {
             case .measure: labels = HandshakeStep.measureLabels
             case .sync: labels = HandshakeStep.syncLabels
             default: labels = HandshakeStep.defaultLabels
@@ -627,15 +672,15 @@ extension BC768Client {
         case .write2: candidate = config.writeChars.count > 1 ? config.writeChars[1] : nil
         }
         guard let writeChar = candidate, discovered[writeChar.uuid] != nil else {
-            Log.error("送信先の Characteristic が見つかりません。")
-            shutdown(exitCode: 1)
+            logError("送信先の Characteristic が見つかりません。")
+            finish(.failed("送信先の Characteristic が見つかりません"))
             return
         }
         activeWriteChar = writeChar
         triedWriteChars = [writeChar.logicalName]
 
         let maxLength = peripheral.maximumWriteValueLength(for: .withoutResponse)
-        Log.event("HANDSHAKE_START", [
+        logEvent("HANDSHAKE_START", [
             ("writeChar", writeChar.logicalName),
             ("uuid", writeChar.uuid.uuidString),
             ("steps", steps.map(\.label).joined(separator: "→")),
@@ -658,11 +703,12 @@ extension BC768Client {
         }
         let fragments = BC768Fragment.split(encoded, seq: seq, maxPayload: Self.fragmentSize)
 
+        emit(.phase(step.label == "measure" ? .waitingForMeasurement : .handshaking(step: step.label)))
         // 0x0010 は日時設定なので、何を送ったか読める形でも残す。
         let datetime = step.message.command == 0x0010
-            ? BC768DateTime.decode(step.message.payload).map { Log.timestamp($0) }
+            ? BC768DateTime.decode(step.message.payload).map { BC768MeasurementRecord.format($0) }
             : nil
-        Log.event("TX_MESSAGE", [
+        logEvent("TX_MESSAGE", [
             ("step", step.label),
             ("command", String(format: "0x%04X", step.message.command)),
             ("expect", String(format: "0x%04X", step.expected)),
@@ -673,7 +719,7 @@ extension BC768Client {
             ("hex", encoded.hexString),
         ])
         if step.label == "measure" {
-            Log.info("測定を開始します。BC-768 に乗ってください（最大 \(Int(step.timeout ?? options.responseTimeout)) 秒待ちます）。")
+            logInfo("測定を開始します。BC-768 に乗ってください（最大 \(Int(step.timeout ?? options.responseTimeout)) 秒待ちます）。")
         }
 
         guard let writeChar = activeWriteChar, let characteristic = discovered[writeChar.uuid] else { return }
@@ -682,7 +728,7 @@ extension BC768Client {
             queue.asyncAfter(deadline: .now() + .milliseconds(delay)) { [weak self] in
                 guard let self, !self.isTerminating else { return }
                 // 送信前に必ずログを残す（仕様書 15）。
-                Log.event("WRITE", [
+                logEvent("WRITE", [
                     ("uuid", writeChar.uuid.uuidString),
                     ("logical", writeChar.logicalName),
                     ("type", "withoutResponse"),
@@ -708,7 +754,7 @@ extension BC768Client {
 
     private func handleResponseTimeout(on peripheral: CBPeripheral) {
         let step = steps[stepIndex]
-        Log.event("RESPONSE_TIMEOUT", [
+        logEvent("RESPONSE_TIMEOUT", [
             ("step", step.label),
             ("expected", String(format: "0x%04X", step.expected)),
             ("writeChar", activeWriteChar?.logicalName),
@@ -718,10 +764,10 @@ extension BC768Client {
         guard options.writeChar == .auto, stepIndex == 0,
               let alternative = config.writeChars.first(where: { !triedWriteChars.contains($0.logicalName) }),
               discovered[alternative.uuid] != nil else {
-            Log.error("ハンドシェイクが進みませんでした。--write-char で送信先を切り替えて再試行してください。")
+            logError("ハンドシェイクが進みませんでした。--write-char で送信先を切り替えて再試行してください。")
             return
         }
-        Log.info("応答がないため送信先を \(alternative.logicalName) へ切り替えて再試行します。")
+        logInfo("応答がないため送信先を \(alternative.logicalName) へ切り替えて再試行します。")
         activeWriteChar = alternative
         triedWriteChars.insert(alternative.logicalName)
         reassembler.reset()
@@ -729,11 +775,11 @@ extension BC768Client {
     }
 
     func handleHandshakeResponse(_ message: BC768Message, on peripheral: CBPeripheral) {
-        guard [.handshake, .measure, .sync].contains(options.command),
+        guard [.handshake, .measure, .sync].contains(options.mode),
               stepIndex < steps.count, !handshakeFinished else { return }
         let step = steps[stepIndex]
         guard message.command == step.expected else {
-            Log.event("UNEXPECTED_RESPONSE", [
+            logEvent("UNEXPECTED_RESPONSE", [
                 ("step", step.label),
                 ("expected", String(format: "0x%04X", step.expected)),
                 ("actual", String(format: "0x%04X", message.command)),
@@ -745,15 +791,15 @@ extension BC768Client {
         if message.command == 0xB000 {
             let pending = BC768Record.hasPendingData(message.payload)
             lastSendPending = pending
-            Log.event("PENDING_DATA", [
+            logEvent("PENDING_DATA", [
                 ("payload", message.payload.hexString),
                 ("hasData", pending.map { $0 ? "true" : "false" }),
             ])
             if pending == false {
-                Log.info("取り出せる測定データはありません（0x3010 を送っても前回値が返ります）。")
+                logInfo("取り出せる測定データはありません（0x3010 を送っても前回値が返ります）。")
             }
         }
-        Log.event("STEP_OK", [
+        logEvent("STEP_OK", [
             ("step", step.label),
             ("command", String(format: "0x%04X", message.command)),
             ("writeChar", activeWriteChar?.logicalName),
@@ -762,13 +808,14 @@ extension BC768Client {
         stepIndex += 1
         guard stepIndex < steps.count else {
             handshakeFinished = true
-            Log.info("ハンドシェイクが最後まで成功しました（送信先 = \(activeWriteChar?.logicalName ?? "?")）。")
+            emit(.phase(.completed))
+            logInfo("ハンドシェイクが最後まで成功しました（送信先 = \(activeWriteChar?.logicalName ?? "?")）。")
             // --wait を明示していなければ、完走した時点で終了する。
             // 待ち続けるとパイプ先（jq など）が出力を flush できない。
             if options.waitSeconds == nil {
-                shutdown(exitCode: 0)
+                finish(.finished)
             } else {
-                Log.info("以降の Notify も記録し続けます。終了は Ctrl+C。")
+                logInfo("以降の Notify も記録し続けます。終了は Ctrl+C。")
             }
             return
         }

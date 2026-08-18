@@ -1,3 +1,4 @@
+import BC768BLE
 import BC768Protocol
 import CoreBluetooth
 import Foundation
@@ -21,34 +22,6 @@ enum ConfigKey: String, CaseIterable {
         case .notifyChar2: return "NOTIFY_CHAR_2"
         case .notifyChar3: return "NOTIFY_CHAR_3"
         }
-    }
-}
-
-struct NamedUUID {
-    let logicalName: String
-    let uuid: CBUUID
-}
-
-/// handshake コマンドでのみ必要になる値。Android HCI キャプチャ由来なので設定として外に出す。
-struct HandshakeConfig {
-    /// 0x0003 で送るクライアント識別子（36 文字の UUID 文字列）。
-    let clientID: String
-    /// 0x0010 で送る payload。nil なら実行時に現在時刻から組み立てる。
-    let sessionPayload: Data?
-}
-
-struct Config {
-    let service: NamedUUID
-    let writeChars: [NamedUUID]
-    let notifyChars: [NamedUUID]
-    let handshake: HandshakeConfig?
-
-    var allCharacteristics: [NamedUUID] { writeChars + notifyChars }
-
-    /// 実 UUID から論理名を引く（ログ表示用）。
-    func logicalName(for uuid: CBUUID) -> String? {
-        if uuid == service.uuid { return service.logicalName }
-        return allCharacteristics.first { $0.uuid == uuid }?.logicalName
     }
 }
 
@@ -88,7 +61,7 @@ enum ConfigError: Error, CustomStringConvertible {
 
 enum ConfigLoader {
     /// 読み込み優先度: 環境変数 > 明示指定 .env > ./.env > ~/.config/bc768-probe/env
-    static func load(explicitPath: String?, requireCharacteristics: Bool, requireHandshake: Bool = false) throws -> Config {
+    static func load(explicitPath: String?, requireCharacteristics: Bool, requireHandshake: Bool = false) throws -> BC768Configuration {
         var searchedPaths: [String] = []
         var fileValues: [String: String] = [:]
 
@@ -131,10 +104,11 @@ enum ConfigLoader {
 
         let service = try uuid(.serviceUUID)
         guard requireCharacteristics else {
-            return Config(service: service, writeChars: [], notifyChars: [], handshake: nil)
+            return BC768Configuration(service: service)
         }
 
-        var handshake: HandshakeConfig?
+        var clientID: String?
+        var sessionPayload: Data?
         if requireHandshake {
             func value(_ key: String) -> String? {
                 let raw = ProcessInfo.processInfo.environment[key] ?? fileValues[key]
@@ -148,21 +122,21 @@ enum ConfigLoader {
             }
             // 0x0010 は日時設定なので既定では現在時刻から生成する。
             // 設定されていれば固定値を使う（HCI ログとの比較実験用）。
-            var sessionPayload: Data?
             if let raw = value(sessionKey) {
                 guard let parsed = Data(hexString: raw) else {
                     throw ConfigError.invalidHex(key: sessionKey, value: raw)
                 }
                 sessionPayload = parsed
             }
-            handshake = HandshakeConfig(clientID: value(clientIDKey)!, sessionPayload: sessionPayload)
+            clientID = value(clientIDKey)
         }
 
-        return Config(
+        return BC768Configuration(
             service: service,
             writeChars: [try uuid(.writeChar1), try uuid(.writeChar2)],
             notifyChars: [try uuid(.notifyChar1), try uuid(.notifyChar2), try uuid(.notifyChar3)],
-            handshake: handshake
+            clientID: clientID,
+            sessionPayload: sessionPayload
         )
     }
 
