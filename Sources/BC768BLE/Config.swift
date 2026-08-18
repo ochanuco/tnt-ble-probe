@@ -145,15 +145,20 @@ public enum ConfigLoader {
         )
     }
 
+    /// GUI のようにカレントディレクトリが当てにならない場合に使う既定の置き場所。
+    public static var userConfigPath: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let configHome = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? (home + "/.config")
+        return configHome + "/bc768-probe/env"
+    }
+
     private static func candidatePaths(explicitPath: String?) -> [String] {
         var paths: [String] = []
         if let explicitPath {
             paths.append((explicitPath as NSString).expandingTildeInPath)
         }
         paths.append(FileManager.default.currentDirectoryPath + "/.env")
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let configHome = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? (home + "/.config")
-        paths.append(configHome + "/bc768-probe/env")
+        paths.append(userConfigPath)
         return paths
     }
 

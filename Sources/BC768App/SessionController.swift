@@ -12,10 +12,31 @@ final class SessionController: ObservableObject {
     @Published private(set) var logLines: [String] = []
     /// 直前に取り込んだ結果の要約。
     @Published private(set) var lastResultText: String?
+    /// UUID 設定が見つからないときの案内。nil なら設定済み。
+    @Published private(set) var configurationHint: String?
+
+    /// 設定ファイルの既定の置き場所。GUI はカレントディレクトリが当てにならないためここを見る。
+    var configPath: String { ConfigLoader.userConfigPath }
 
     private var session: BC768Session?
     private let queue = DispatchQueue(label: "com.ochanuco.bc768-app.ble")
     private static let maxLogLines = 300
+
+    /// 起動時に設定の有無を確かめる。無ければ何をすればよいか画面に出す。
+    func checkConfiguration() {
+        do {
+            _ = try ConfigLoader.load(explicitPath: nil, requireCharacteristics: true, requireHandshake: true)
+            configurationHint = nil
+        } catch {
+            configurationHint = """
+            UUID の設定が見つかりません。BC-768 の Service / Characteristic UUID と             クライアント識別子を次の場所に置いてください。
+
+            \(ConfigLoader.userConfigPath)
+
+            リポジトリで CLI を使っている場合は、そこの .env をコピーすれば動きます。
+            """
+        }
+    }
 
     func start(mode: BC768SessionMode, store: MeasurementStore) {
         guard !isRunning else { return }

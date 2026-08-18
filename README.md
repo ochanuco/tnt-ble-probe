@@ -76,6 +76,9 @@ UUID は手元の BC-768 に対して `bc768-probe scan --no-filter` や汎用�
 ## GUI
 
 ```bash
+# GUI は ~/.config/bc768-probe/env を読む（Finder 起動ではカレントディレクトリが使えないため）
+mkdir -p ~/.config/bc768-probe && cp .env ~/.config/bc768-probe/env
+
 ./scripts/make-app.sh
 open .build/BC-768.app
 ```

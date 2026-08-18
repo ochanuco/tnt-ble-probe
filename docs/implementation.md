@@ -60,6 +60,20 @@ open .build/BC-768.app
 | 確認 | `sync` 相当。測定せず、保持されているデータを取り込む |
 | 送信 | 蓄積した記録を CSV で書き出す（スプレッドシート向け） |
 
+### GUI での UUID 設定
+
+GUI は Finder から起動するとカレントディレクトリが `/` になるため、リポジトリの `./.env` を読めない。
+**`~/.config/bc768-probe/env` に置く必要がある。**
+
+```bash
+mkdir -p ~/.config/bc768-probe
+cp .env ~/.config/bc768-probe/env
+chmod 600 ~/.config/bc768-probe/env
+```
+
+設定が見つからない場合、GUI は起動時に案内を出し、測定系のボタンを押せないようにする。
+置き場所を開くボタンと再確認ボタンもそこに出る。
+
 取り込んだ記録は `~/Library/Application Support/bc768-probe/records.jsonl` に貯まる。
 CLI の `--out` と同じ JSON Lines なので、同じファイルを指せば両方から扱える。
 測定日時が同じレコードは二重に保存しない。日時のないレコード（接続外測定や引き取り済み）は

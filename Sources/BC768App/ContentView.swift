@@ -10,6 +10,10 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let hint = controller.configurationHint {
+                configurationBanner(hint)
+                Divider()
+            }
             actions
             Divider()
             status
@@ -23,6 +27,7 @@ struct ContentView: View {
             footer
         }
         .frame(minWidth: 780, minHeight: 480)
+        .onAppear { controller.checkConfiguration() }
     }
 
     // MARK: - 操作
@@ -35,6 +40,7 @@ struct ContentView: View {
                 Label("入力", systemImage: "figure.stand")
             }
             .help("BC-768 で測定して結果を取り込みます。本体の「入力モード」を押してください")
+            .disabled(controller.isRunning || controller.configurationHint != nil)
 
             Button {
                 controller.start(mode: .sync, store: store)
@@ -42,6 +48,7 @@ struct ContentView: View {
                 Label("確認", systemImage: "arrow.down.circle")
             }
             .help("測定は行わず、BC-768 が保持しているデータを確認して取り込みます")
+            .disabled(controller.isRunning || controller.configurationHint != nil)
 
             Button {
                 exportCSV()
@@ -58,8 +65,27 @@ struct ContentView: View {
                 Button("中止") { controller.cancel() }
             }
         }
-        .disabled(controller.isRunning && !controller.isRunning)
         .padding(12)
+    }
+
+    private func configurationBanner(_ hint: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(hint).font(.callout).textSelection(.enabled)
+                HStack {
+                    Button("置き場所を開く") {
+                        let directory = (controller.configPath as NSString).deletingLastPathComponent
+                        try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(URL(fileURLWithPath: directory))
+                    }
+                    Button("再確認") { controller.checkConfiguration() }
+                }
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.12))
     }
 
     // MARK: - 状態
