@@ -144,3 +144,91 @@ final class DateTimeTests: XCTestCase {
         XCTAssertEqual(BC768DateTime.encode(date(2026, 8, 19, 1, 53, 8), calendar: calendar)?.count, 9)
     }
 }
+
+/// TLV は「タグごとに value 長が決まっている」形式。実測データは使わず、
+/// 既知タグを組み合わせた合成 payload で構造だけを検証する。
+final class TLVTests: XCTestCase {
+    func testParsesKnownTagsToEnd() {
+        var payload = Data([0x00, 0x01])                       // 0xB010 のヘッダ相当
+        payload.append(contentsOf: [0x6A, 0x32, 0x25, 0xFF])   // 2 バイト値
+        payload.append(contentsOf: [0x6A, 0x33, 0x00, 0x35, 0x08]) // 3 バイト値
+        payload.append(contentsOf: [0x60, 0x24, 0x03])         // 1 バイト値
+        payload.append(contentsOf: [0x6A, 0x15, 0, 0, 0, 1])   // 4 バイト値
+
+        guard case let .complete(fields) = BC768TLV.parse(payload, headerLength: 2) else {
+            return XCTFail("末尾まで解釈できるはず")
+        }
+        XCTAssertEqual(fields.map(\.tag), [0x6A32, 0x6A33, 0x6024, 0x6A15])
+        XCTAssertEqual(fields.map(\.value.count), [2, 3, 1, 4])
+        XCTAssertEqual(fields[0].unsignedValue, 0x25FF)
+        XCTAssertEqual(fields[3].unsignedValue, 1)
+    }
+
+    func testStopsAtUnknownTag() {
+        var payload = Data([0x00])
+        payload.append(contentsOf: [0x60, 0x24, 0x03])
+        payload.append(contentsOf: [0xAA, 0xBB, 0x01, 0x02])   // 未知タグ
+        guard case let .partial(fields, unparsed) = BC768TLV.parse(payload, headerLength: 1) else {
+            return XCTFail("未知タグで打ち切るはず")
+        }
+        XCTAssertEqual(fields.map(\.tag), [0x6024])
+        XCTAssertEqual(unparsed.hexString, "aabb0102")
+    }
+
+    func testSignedValue() {
+        // インピーダンス系は負の値を取る。0xFE16 は -490。
+        let field = BC768TLVField(tag: 0x614C, value: Data([0xFE, 0x16]))
+        XCTAssertEqual(field.signedValue, -490)
+        XCTAssertEqual(field.unsignedValue, 0xFE16)
+    }
+
+    func testAllMeasurementTagsHaveLengths() {
+        // 意味を定義したタグは、長さ表にも載っていること。
+        for tag in BC768Field.definitions.keys {
+            XCTAssertNotNil(BC768TLV.valueLengths[tag], "tag \(String(format: "%04X", tag)) の長さ定義がない")
+        }
+    }
+}
+
+/// 検算ロジックの確認。値は架空のもの（実測データは含めない）。
+final class ConsistencyTests: XCTestCase {
+    /// 体重 70.00kg / 身長 175.0cm / 体脂肪率 20.0% / 筋肉量 52.90kg / 推定骨量 3.10kg
+    private var fields: [BC768TLVField] {
+        [
+            BC768TLVField(tag: 0x6A3E, value: Data([0x06, 0xD6])),   // 1750 → 175.0 cm
+            BC768TLVField(tag: 0x6021, value: Data([0x1B, 0x58])),   // 7000 → 70.00 kg
+            BC768TLVField(tag: 0x6022, value: Data([0x00, 0xC8])),   // 200  → 20.0 %
+            BC768TLVField(tag: 0x6023, value: Data([0x14, 0xAA])),   // 5290 → 52.90 kg
+            BC768TLVField(tag: 0x6029, value: Data([0x01, 0x36])),   // 310  → 3.10 kg
+            BC768TLVField(tag: 0x6056, value: Data([0x00, 0xE5])),   // 229  → 22.9
+        ]
+    }
+
+    func testScaledValues() {
+        XCTAssertEqual(BC768Field.scaledValue(fields, tag: 0x6021), 70.00)
+        XCTAssertEqual(BC768Field.scaledValue(fields, tag: 0x6A3E), 175.0)
+        XCTAssertEqual(BC768Field.scaledValue(fields, tag: 0x6022), 20.0)
+    }
+
+    func testBothChecksPass() {
+        let checks = BC768Consistency.checks(for: fields)
+        XCTAssertEqual(checks.count, 2)
+        // BMI = 70 / 1.75^2 = 22.857…、受信値 22.9
+        XCTAssertTrue(checks[0].passed, checks[0].description)
+        // 除脂肪量 = 70 × 0.8 = 56.0、筋肉量 + 骨量 = 52.90 + 3.10 = 56.0
+        XCTAssertTrue(checks[1].passed, checks[1].description)
+    }
+
+    func testDetectsInconsistency() {
+        var broken = fields
+        broken.removeAll { $0.tag == 0x6023 }
+        // 筋肉量を 10kg 多い値に差し替えると除脂肪量の検算が破れる
+        broken.append(BC768TLVField(tag: 0x6023, value: Data([0x18, 0x9C])))  // 63.00 kg
+        let checks = BC768Consistency.checks(for: broken)
+        XCTAssertTrue(checks.contains { !$0.passed })
+    }
+
+    func testChecksAreSkippedWhenFieldsMissing() {
+        XCTAssertTrue(BC768Consistency.checks(for: []).isEmpty)
+    }
+}

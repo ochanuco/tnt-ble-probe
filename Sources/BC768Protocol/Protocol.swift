@@ -9,7 +9,7 @@ import Foundation
 ///
 /// checksum は「メッセージ全バイトの総和の下位 8bit が 0xFF になる」値。
 /// 詳細は docs/protocol.md を参照。
-public struct BC768Message {
+public struct BC768Message: Sendable {
     public init(command: UInt16, payload: Data) {
         self.command = command
         self.payload = payload

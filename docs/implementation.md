@@ -10,6 +10,9 @@ Swift Package（macOS 13+ / Swift 6 ツールチェーン、言語モードは v
 Package.swift
 Sources/BC768Protocol/            CoreBluetooth に依存しないプロトコル層
   Protocol.swift                  メッセージ / フラグメント / チェックサム / 再構成
+  DateTime.swift                  日時エンコード
+  TLV.swift                       TLV パーサ（タグごとの固定長テーブル）
+  Measurement.swift               測定値のラベル付けと検算
   Hex.swift                       hex 変換
 Sources/BC768Probe/
   main.swift                      CLI entrypoint・シグナル処理・run loop
@@ -17,6 +20,7 @@ Sources/BC768Probe/
   Config.swift                    UUID とハンドシェイク値の外部設定（環境変数 / .env）
   BC768Client.swift               CoreBluetooth delegate（scan / connect / discover / subscribe / handshake）
   Handshake.swift                 ハンドシェイクの手順定義
+  Decode.swift                    decode コマンド（オフライン解釈）
   CharacteristicProperties.swift  Property の人間可読化
   Log.swift                       行指向ロガー
   Info.plist                      NSBluetoothAlwaysUsageDescription
@@ -82,6 +86,7 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | `probe` | scan → connect → discover services → discover characteristics → subscribe → wait |
 | `handshake` | probe に続けて、HCI ログで確認済みのハンドシェイクを送る |
 | `measure` | handshake に続けて測定を開始し、結果を受け取る |
+| `decode` | 受信済みの hex を TLV として解釈する（BLE を使わない） |
 
 | オプション | 既定 | 内容 |
 | --- | --- | --- |
@@ -154,6 +159,26 @@ result       0x3010 01            → 0xB010     測定結果
 - `0x1002`（データ書き込み / 設定）は BC-768 の状態を変える可能性があるため**送らない**。
 - `0x0010` は日時設定コマンドなので、固定値ではなく実行時の現在時刻から組み立てる
   （`docs/protocol.md` の日時エンコードを参照）。
+
+## デコード
+
+`measure` で受け取った `0xB010`、および `0x9000` / `0x9002` は TLV として解釈してログへ出す。
+ラベルと係数は `docs/protocol.md` の表に対応し、推定のものは「(推定)」と表示する。
+raw hex も必ず併記するので、後から読み直せる。
+
+受信ごとに次の検算を行い結果を出力する。桁を間違えていれば破れるため、解釈の妥当性を機械的に確認できる。
+
+```text
+BMI      = 体重 / 身長²
+除脂肪量 = 体重 × (1 - 体脂肪率) ≒ 筋肉量 + 推定骨量
+```
+
+ログに残した hex を後から解釈し直すには `decode` を使う（BLE も UUID 設定も不要）。
+
+```bash
+bc768-probe decode --command B010 <payload hex>
+bc768-probe decode <message hex>     # total_length から checksum まで含む全体
+```
 
 ## 安全性
 

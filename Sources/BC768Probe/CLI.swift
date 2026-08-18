@@ -5,6 +5,7 @@ enum Command: String {
     case probe
     case handshake
     case measure
+    case decode
 }
 
 /// handshake の送信先 Characteristic。実機で確かめるまで確定できないため選べるようにしてある。
@@ -48,6 +49,10 @@ struct Options {
     var handshakeDelay: Double = 0
     /// 実行する handshake ステップ。nil なら既定の全ステップ。
     var steps: [String]?
+    /// decode コマンドに渡された hex 文字列。
+    var hexArguments: [String] = []
+    /// decode で payload として解釈するときのコマンド番号。
+    var decodeCommand: UInt16?
 
     static let usage = """
     bc768-probe - TANITA BC-768 / macOS BLE Pairing 検証 CLI
@@ -60,6 +65,7 @@ struct Options {
       probe      scan → connect → discover → subscribe → wait を実行する
       handshake  probe に続けて、HCI ログで確認済みのハンドシェイクを送る
       measure    handshake に続けて測定を開始し、結果を受け取る
+      decode     受信済みの hex を TLV として解釈する (BLE を使わない)
 
     OPTIONS:
       --debug             DEBUG ログを有効にする
@@ -78,6 +84,8 @@ struct Options {
                           購読完了から handshake 開始までの待ち (既定 0)
       --steps <a,b,...>   実行する handshake ステップを絞る
                           (identify,session,device-info,read-data,finish)
+      --command <hex>     decode で hex を payload として扱うときのコマンド番号
+                          (例: --command B010。省略時はメッセージ全体として解釈)
       -h, --help          このヘルプを表示する
 
     ENVIRONMENT:
@@ -172,6 +180,12 @@ enum CLI {
                     throw CLIError.invalidValue(option: arg, value: value)
                 }
                 options.steps = labels
+            case "--command":
+                let value = try nextValue(for: arg)
+                guard let parsed = UInt16(value.replacingOccurrences(of: "0x", with: ""), radix: 16) else {
+                    throw CLIError.invalidValue(option: arg, value: value)
+                }
+                options.decodeCommand = parsed
             case "--id":
                 let value = try nextValue(for: arg)
                 guard let parsed = UUID(uuidString: value) else {
@@ -179,11 +193,15 @@ enum CLI {
                 }
                 options.peripheralID = parsed
             default:
-                guard !arg.hasPrefix("-"), !sawCommand, let command = Command(rawValue: arg) else {
+                guard !arg.hasPrefix("-") else { throw CLIError.unknownArgument(arg) }
+                if !sawCommand, let command = Command(rawValue: arg) {
+                    options.command = command
+                    sawCommand = true
+                } else if options.command == .decode {
+                    options.hexArguments.append(arg)
+                } else {
                     throw CLIError.unknownArgument(arg)
                 }
-                options.command = command
-                sawCommand = true
             }
             index += 1
         }

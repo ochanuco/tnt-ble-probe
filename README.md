@@ -9,8 +9,9 @@ TANITA BC-768（体組成計）と macOS の BLE Pairing / GATT 通信を検証�
 `scan` / `probe` は Scan / Connect / Discovery / Notify 購読 / ログまで。`handshake` / `measure` は
 Android の HCI キャプチャで確認済みの通信手順を送る。**推測した payload は一切送らない。**
 
-`measure` では macOS から BC-768 の測定を実行し、測定結果の raw payload を取得できる
-（[docs/verification-log.md](docs/verification-log.md)）。体組成値のデコードは未実装。
+`measure` では macOS から BC-768 の測定を実行し、測定結果をデコードして表示する。
+体重・身長・体脂肪率・筋肉量・推定骨量・BMI は BMI と除脂肪量の検算で裏づけ済み
+（[docs/protocol.md](docs/protocol.md)）。
 
 ## セットアップ
 
@@ -38,6 +39,9 @@ swift build
 
 # 測定を実行して結果を受け取る
 .build/debug/bc768-probe measure --debug
+
+# ログに残した hex を後から解釈する（BLE 不要）
+.build/debug/bc768-probe decode --command B010 <payload hex>
 ```
 
 BC-768 側は、実行前に本体の**「入力モード」**を押して起動しておく。

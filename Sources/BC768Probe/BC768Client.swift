@@ -430,6 +430,7 @@ extension BC768Client: CBPeripheralDelegate {
             ("ascii", message.payload.asciiPreview),
         ], level: checksumValid ? .info : .error)
 
+        decodeIfMeasurement(message)
         handleHandshakeResponse(message, on: peripheral)
     }
 }
@@ -538,6 +539,39 @@ private extension BC768Client {
             }
         } else {
             Log.info("待機中。Notify を受信するとログに出力します。終了は Ctrl+C。")
+        }
+    }
+}
+
+// MARK: - TLV デコード
+
+extension BC768Client {
+    /// 測定結果 (0xB010) と設定応答 (0x9000 / 0x9002) の payload を TLV として解釈して出力する。
+    /// ラベルの大半は推定なので、raw hex も必ず併記する。
+    func decodeIfMeasurement(_ message: BC768Message) {
+        let headerLength: Int
+        switch message.command {
+        case 0xB010: headerLength = 2
+        case 0x9000, 0x9002: headerLength = 1
+        default: return
+        }
+        let result = BC768TLV.parse(message.payload, headerLength: headerLength)
+        Log.event("DECODED", [
+            ("command", String(format: "0x%04X", message.command)),
+            ("fields", String(result.fields.count)),
+            ("unparsed", {
+                if case let .partial(_, unparsed) = result { return unparsed.hexString }
+                return nil
+            }()),
+        ])
+        for field in result.fields {
+            Log.info("  " + BC768Field.describe(field))
+        }
+        if case let .partial(_, unparsed) = result, !unparsed.isEmpty {
+            Log.info("  未解釈の残り: \(unparsed.hexString)")
+        }
+        for check in BC768Consistency.checks(for: result.fields) {
+            Log.info("  [検算] " + check.description)
         }
     }
 }

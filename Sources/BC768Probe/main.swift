@@ -15,6 +15,12 @@ do {
 }
 
 Log.level = options.debug ? .debug : .info
+
+// decode は BLE も UUID 設定も使わない。
+if options.command == .decode {
+    exit(DecodeCommand.run(options))
+}
+
 Log.info("bc768-probe command=\(options.command.rawValue) debug=\(options.debug)")
 
 let config: Config
