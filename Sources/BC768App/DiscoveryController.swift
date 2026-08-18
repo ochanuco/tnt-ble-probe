@@ -16,6 +16,8 @@ final class DiscoveryController: ObservableObject {
     /// 保存するクライアント識別子。既存の設定があれば初期値に入る。
     @Published var clientID: String = ConfigWriter.existingClientID() ?? ""
     @Published private(set) var savedPath: String?
+    /// 直前に調べた端末（識別子の取り違えを検出するために覚えておく）。
+    @Published private(set) var inspectedPeripheral: BC768DiscoveredPeripheral?
 
     private var session: BC768DiscoverySession?
 
@@ -48,6 +50,7 @@ final class DiscoveryController: ObservableObject {
         isBusy = true
         statusText = "\(peripheral.displayName) を調べています。"
 
+        inspectedPeripheral = peripheral
         session = BC768DiscoverySession(targetID: peripheral.id, scanTimeout: 30) { [weak self] event in
             Task { @MainActor in self?.handle(event) }
         }
@@ -59,16 +62,47 @@ final class DiscoveryController: ObservableObject {
         statusText = "止めました。"
     }
 
+    /// 入力されたクライアント識別子の問題点。nil なら保存してよい。
+    ///
+    /// 画面に UUID が並ぶため、Service / Characteristic UUID を取り違えて貼りやすい。
+    /// 実際にそれで `0x8003` が `0001`（未登録）になった事例があるので、保存前に弾く。
+    var clientIDIssue: String? {
+        let trimmed = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return "クライアント識別子を入れてください。空のままでは通信できません。"
+        }
+        if let layout {
+            let known: [(String, String)] =
+                [("SERVICE_UUID", layout.service.uuidString)]
+                + layout.writeChars.enumerated().map { ("WRITE_CHAR_\($0.offset + 1)", $0.element.uuidString) }
+                + layout.notifyChars.enumerated().map { ("NOTIFY_CHAR_\($0.offset + 1)", $0.element.uuidString) }
+            if let hit = known.first(where: { $0.1.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+                return "これは \(hit.0) の値です。クライアント識別子は BC-768 の UUID とは別物で、Health Planet が使っている 36 文字の値です。"
+            }
+        }
+        if let peripheral = inspectedPeripheral,
+           peripheral.id.uuidString.caseInsensitiveCompare(trimmed) == .orderedSame {
+            return "これは macOS がこの端末に付けた識別子です。クライアント識別子とは別物です。"
+        }
+        let pattern = "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+        guard trimmed.range(of: pattern, options: .regularExpression) != nil else {
+            return "36 文字の UUID 形式（8-4-4-4-12）で入れてください。"
+        }
+        return nil
+    }
+
     /// 調べた結果を設定ファイルへ書き出す。
     func save() {
         guard let layout else { return }
+        if let issue = clientIDIssue {
+            errorText = issue
+            return
+        }
         let trimmed = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            try ConfigWriter.save(layout: layout, clientID: trimmed.isEmpty ? nil : trimmed, to: configPath)
+            try ConfigWriter.save(layout: layout, clientID: trimmed, to: configPath)
             savedPath = configPath
-            errorText = trimmed.isEmpty
-                ? "UUID は保存しましたが、クライアント識別子が空です。このままでは通信できません。"
-                : nil
+            errorText = nil
             statusText = "保存しました。"
         } catch {
             errorText = "\(error)"

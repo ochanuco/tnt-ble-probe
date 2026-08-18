@@ -93,11 +93,16 @@ struct SetupView: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("クライアント識別子").font(.headline)
-                        Text("BC-768 に登録済みの値でないと拒否されます。Health Planet が使っている 36 文字の識別子を入れてください。")
+                        Text("上の UUID とは別物です。Health Planet が使っている 36 文字の識別子を入れてください。BC-768 に登録済みの値でないと拒否されます。")
                             .font(.caption).foregroundStyle(.secondary)
                         TextField("00000000-0000-0000-0000-000000000000", text: $controller.clientID)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
+                        if let issue = controller.clientIDIssue {
+                            Label(issue, systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
                     }
                 } else if !controller.inspectedServices.isEmpty {
                     Text("調べた結果").font(.headline)
@@ -142,7 +147,7 @@ struct SetupView: View {
                 }
             }
             .keyboardShortcut(.defaultAction)
-            .disabled(controller.layout == nil || controller.isBusy)
+            .disabled(controller.layout == nil || controller.isBusy || controller.clientIDIssue != nil)
         }
         .padding(12)
     }
