@@ -140,3 +140,35 @@ BC-768 の「設定/通信」ボタンを約 3 秒長押しし、Pairing 待機�
    これが分かるまで Case C（Write）は実行しない。
 3. payload が確定したら、`WRITE_CHAR_1` / `WRITE_CHAR_2` への Write を実装し（Write Logger 付き）、
    Notify の応答を raw で記録する（Phase 4）。
+
+## 2026-08-19 追加検証（Case A: Connect のみ）
+
+Pairing 待機状態にしたうえで `probe --no-subscribe --debug --wait 60` を実行した。Notify 購読も Write も行わない。
+
+| # | 条件 | 接続維持時間 | 切断理由 |
+| --- | --- | --- | --- |
+| 2 | 待機状態あり + Notify 購読（Case B） | 60 秒（切断されず） | `--wait` 経過による自主切断 |
+| 4 | 待機状態あり + **購読なし**（Case A） | **60 秒（切断されず）** | `--wait` 経過による自主切断 |
+
+- Phase 1 は同様に成功。
+- Notify 購読を行わなくても、待機状態であれば 60 秒間切断されなかった。
+- macOS の Pairing UI は表示されず、Notify も 0 件（購読していないので当然）。
+
+### 結論（Pairing 検証 Case A / B）
+
+| 観点 | 結果 |
+| --- | --- |
+| 接続維持を決めるもの | **BC-768 の Pairing 待機状態のみ**。Notify 購読の有無は無関係 |
+| Notify 購読による Pairing 誘発 | **発生しない**（Case B 否定） |
+| Connect のみによる待機状態の終了 | **発生しない**（Case A 否定） |
+| macOS の Pairing UI | 一度も表示されない |
+| Bonding | 成立しない（再接続時に待機状態なしと同じ挙動へ戻る） |
+
+BC-768 は GATT レベルの Security Requirement を一切設定していない。CoreBluetooth 側から
+「アクセスによって Pairing を誘発する」経路（read / notify）は存在せず、read 可能な Characteristic も無い。
+
+したがって残る経路は `WRITE_CHAR_1` / `WRITE_CHAR_2` への Write（Case C / Phase 4）のみ。
+正しい payload が Android HCI ログから確定するまで実行しない。
+
+仕様書 22 の Phase 2「Notify enable → macOS Pairing 開始 → BC-768 Pairing 待機終了」は、
+**成立しない前提だったと結論づける**。Phase 3（Bonding 済み再接続）も同じ理由で現状は到達不能。
