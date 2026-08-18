@@ -38,8 +38,9 @@ struct Options {
     var readAll = false
     /// scan を省略して既知の Peripheral 識別子へ直接接続する。
     var peripheralID: UUID?
-    /// 接続後の待機秒数。0 で Ctrl+C まで待機。
-    var waitSeconds: Double = 0
+    /// 接続後の待機秒数。未指定なら probe は Ctrl+C まで待機し、
+    /// handshake / measure / sync は手順が完走した時点で終了する。
+    var waitSeconds: Double?
     /// handshake の送信先。auto は WRITE_CHAR_1 を試し、応答がなければ WRITE_CHAR_2 へ切り替える。
     var writeChar: WriteCharSelection = .auto
     /// handshake の応答待ちタイムアウト秒。
@@ -83,7 +84,9 @@ struct Options {
       --no-subscribe      Notify 購読を行わない (Pairing 検証 Case A)
       --read-all          readable な Characteristic を read する (Write は行わない)
       --id <uuid>         scan を省略して指定 Peripheral 識別子へ直接接続する
-      --wait <sec>        接続後の待機秒数 (既定 0 = Ctrl+C まで待機)
+      --wait <sec>        接続後の待機秒数。0 で Ctrl+C まで待機し続ける
+                          (未指定なら probe は Ctrl+C まで待機、
+                           handshake/measure/sync は完走した時点で終了)
       --write-char <sel>  handshake の送信先 (auto | write1 | write2、既定 auto)
       --response-timeout <sec>
                           handshake の応答待ちタイムアウト (既定 3)

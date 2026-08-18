@@ -533,12 +533,14 @@ private extension BC768Client {
     }
 
     func announceWaiting() {
-        if options.waitSeconds > 0 {
-            Log.info("待機します（\(Int(options.waitSeconds)) 秒）。Ctrl+C でいつでも終了できます。")
-            queue.asyncAfter(deadline: .now() + options.waitSeconds) { [weak self] in
+        if let wait = options.waitSeconds, wait > 0 {
+            Log.info("待機します（\(Int(wait)) 秒）。Ctrl+C でいつでも終了できます。")
+            queue.asyncAfter(deadline: .now() + wait) { [weak self] in
                 Log.info("待機時間が経過しました。")
                 self?.shutdown(exitCode: 0)
             }
+        } else if [.handshake, .measure, .sync].contains(options.command) {
+            Log.info("手順を進めます。完走した時点で終了します（--wait 0 で待機し続けられます）。")
         } else {
             Log.info("待機中。Notify を受信するとログに出力します。終了は Ctrl+C。")
         }
@@ -761,7 +763,13 @@ extension BC768Client {
         guard stepIndex < steps.count else {
             handshakeFinished = true
             Log.info("ハンドシェイクが最後まで成功しました（送信先 = \(activeWriteChar?.logicalName ?? "?")）。")
-            Log.info("以降の Notify も記録し続けます。終了は Ctrl+C。")
+            // --wait を明示していなければ、完走した時点で終了する。
+            // 待ち続けるとパイプ先（jq など）が出力を flush できない。
+            if options.waitSeconds == nil {
+                shutdown(exitCode: 0)
+            } else {
+                Log.info("以降の Notify も記録し続けます。終了は Ctrl+C。")
+            }
             return
         }
         sendCurrentStep(on: peripheral)

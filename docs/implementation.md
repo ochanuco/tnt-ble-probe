@@ -102,7 +102,7 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | `--no-subscribe` | off | Notify 購読を行わない（Pairing 検証 Case A） |
 | `--read-all` | off | readable な Characteristic を read する（Write はしない） |
 | `--id <uuid>` | - | scan を省略して既知の Peripheral 識別子へ直接接続 |
-| `--wait <sec>` | 0 | 接続後の待機秒数。0 で Ctrl+C まで待機 |
+| `--wait <sec>` | 未指定 | 接続後の待機秒数。`0` で Ctrl+C まで待機し続ける。未指定なら `probe` は Ctrl+C まで待機し、`handshake` / `measure` / `sync` は手順が完走した時点で終了する |
 | `--write-char <sel>` | auto | handshake の送信先（`auto` / `write1` / `write2`） |
 | `--response-timeout <sec>` | 3 | handshake の応答待ちタイムアウト |
 | `--notify-char <sel>` | all | 購読する Notify（`all` / `notify1` / `notify2` / `notify3`） |
@@ -233,6 +233,10 @@ bc768-probe decode --command B010 --json --pretty <payload hex>
 
 JSON が出るのは `0xB010` を受け取ったときだけなので、`scan` / `probe` で `--json` や `--out` を
 指定しても何も出ない。その場合は警告を出す。
+
+`handshake` / `measure` / `sync` は `--wait` を明示しない限り**手順が完走した時点で終了する**。
+待ち続けるとパイプ先（`jq` など）が出力をフラッシュできず、JSON が画面に出てこないため。
+観測のために接続を保ちたいときは `--wait 0` を渡す。
 
 ## 安全性
 
