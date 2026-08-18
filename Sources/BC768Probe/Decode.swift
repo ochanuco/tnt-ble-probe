@@ -58,7 +58,7 @@ enum DecodeCommand {
             Log.info("  [検算] " + check.description)
         }
         if command == 0xB010, !BC768Record.hasTimestamp(result.fields) {
-            Log.error("このレコードは日付・時刻がゼロです。新しい測定結果ではなく、BC-768 に残っていた前回値です。")
+            Log.error("このレコードは日付・時刻がゼロです。接続外で測定された結果か、既に引き取り済みの残留値です。測定時刻は分からず、最新かどうかも判断できません。")
         }
     }
 }
