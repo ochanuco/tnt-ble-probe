@@ -94,6 +94,8 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | `--wait <sec>` | 0 | 接続後の待機秒数。0 で Ctrl+C まで待機 |
 | `--write-char <sel>` | auto | handshake の送信先（`auto` / `write1` / `write2`） |
 | `--response-timeout <sec>` | 3 | handshake の応答待ちタイムアウト |
+| `--notify-char <sel>` | all | 購読する Notify（`all` / `notify1` / `notify2` / `notify3`） |
+| `--handshake-delay <sec>` | 0 | 購読完了から handshake 開始までの待ち |
 
 `probe` は開始時に `retrieveConnectedPeripherals(withServices:)` を確認する。Bonding 済みで macOS が既に接続を
 保持している場合、広告が出ず scan で見つからないことがあるため。

@@ -48,7 +48,7 @@ final class BC768Client: NSObject {
 
             if let peripheral = self.target {
                 // 既に切断済みなら CCCD 書き込みは無意味なので行わない。
-                for named in self.config.notifyChars where peripheral.state == .connected {
+                for named in self.targetNotifyChars where peripheral.state == .connected {
                     if let characteristic = self.discovered[named.uuid], characteristic.isNotifying {
                         Log.event("UNSUBSCRIBE", [
                             ("logical", named.logicalName),
@@ -371,10 +371,18 @@ extension BC768Client: CBPeripheralDelegate {
 
         if error == nil, characteristic.isNotifying {
             subscribedCount += 1
-            if subscribedCount == config.notifyChars.count {
+            if subscribedCount == targetNotifyChars.count {
                 Log.info("Notify 購読が \(subscribedCount) 件すべて有効になりました。")
                 if options.command == .handshake {
-                    startHandshake(on: peripheral)
+                    if options.handshakeDelay > 0 {
+                        Log.info("\(options.handshakeDelay) 秒待ってから handshake を開始します。")
+                        queue.asyncAfter(deadline: .now() + options.handshakeDelay) { [weak self] in
+                            guard let self, !self.isTerminating else { return }
+                            self.startHandshake(on: peripheral)
+                        }
+                    } else {
+                        startHandshake(on: peripheral)
+                    }
                 } else {
                     Log.info("macOS の Pairing ダイアログが表示された場合は、そのまま操作してください（CLI は待機し続けます）。")
                 }
@@ -465,8 +473,18 @@ private extension BC768Client {
         }
     }
 
+    /// 購読対象。--notify-char で 1 本に絞れる。
+    var targetNotifyChars: [NamedUUID] {
+        switch options.notifyChar {
+        case .all: return config.notifyChars
+        case .notify1: return Array(config.notifyChars.prefix(1))
+        case .notify2: return config.notifyChars.count > 1 ? [config.notifyChars[1]] : []
+        case .notify3: return config.notifyChars.count > 2 ? [config.notifyChars[2]] : []
+        }
+    }
+
     func subscribeNotifications(on peripheral: CBPeripheral) {
-        for named in config.notifyChars {
+        for named in targetNotifyChars {
             guard let characteristic = discovered[named.uuid] else {
                 Log.event("SUBSCRIBE_SKIP", [
                     ("logical", named.logicalName),

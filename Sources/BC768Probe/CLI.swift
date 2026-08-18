@@ -13,6 +13,14 @@ enum WriteCharSelection: String {
     case write2
 }
 
+/// Notify 購読の対象。Android は 1 本しか購読していないため、揃えられるようにする。
+enum NotifyCharSelection: String {
+    case all
+    case notify1
+    case notify2
+    case notify3
+}
+
 struct Options {
     var command: Command = .probe
     var debug = false
@@ -33,6 +41,10 @@ struct Options {
     var writeChar: WriteCharSelection = .auto
     /// handshake の応答待ちタイムアウト秒。
     var responseTimeout: Double = 3
+    /// 購読対象の Notify Characteristic。
+    var notifyChar: NotifyCharSelection = .all
+    /// 購読完了から handshake 開始までの待ち時間（秒）。Android のタイミングを再現するため。
+    var handshakeDelay: Double = 0
 
     static let usage = """
     bc768-probe - TANITA BC-768 / macOS BLE Pairing 検証 CLI
@@ -57,6 +69,9 @@ struct Options {
       --write-char <sel>  handshake の送信先 (auto | write1 | write2、既定 auto)
       --response-timeout <sec>
                           handshake の応答待ちタイムアウト (既定 3)
+      --notify-char <sel> 購読する Notify (all | notify1 | notify2 | notify3、既定 all)
+      --handshake-delay <sec>
+                          購読完了から handshake 開始までの待ち (既定 0)
       -h, --help          このヘルプを表示する
 
     ENVIRONMENT:
@@ -132,6 +147,18 @@ enum CLI {
                     throw CLIError.invalidValue(option: arg, value: value)
                 }
                 options.responseTimeout = parsed
+            case "--notify-char":
+                let value = try nextValue(for: arg)
+                guard let parsed = NotifyCharSelection(rawValue: value) else {
+                    throw CLIError.invalidValue(option: arg, value: value)
+                }
+                options.notifyChar = parsed
+            case "--handshake-delay":
+                let value = try nextValue(for: arg)
+                guard let parsed = Double(value), parsed >= 0 else {
+                    throw CLIError.invalidValue(option: arg, value: value)
+                }
+                options.handshakeDelay = parsed
             case "--id":
                 let value = try nextValue(for: arg)
                 guard let parsed = UUID(uuidString: value) else {
