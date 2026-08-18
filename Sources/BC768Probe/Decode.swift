@@ -42,7 +42,9 @@ enum DecodeCommand {
         let result = BC768TLV.parse(payload, headerLength: headerLength)
         Log.event("DECODED", [
             ("command", String(format: "0x%04X", command)),
-            ("header", BC768Record.header(of: payload).map { String(format: "0x%04X", $0) }),
+            ("header", command == 0xB010
+                ? BC768Record.header(of: payload).map { String(format: "0x%04X", $0) }
+                : nil),
             ("headerLength", String(headerLength)),
             ("fields", String(result.fields.count)),
         ])

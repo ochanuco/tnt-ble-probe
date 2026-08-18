@@ -558,7 +558,10 @@ extension BC768Client {
         let result = BC768TLV.parse(message.payload, headerLength: headerLength)
         Log.event("DECODED", [
             ("command", String(format: "0x%04X", message.command)),
-            ("header", BC768Record.header(of: message.payload).map { String(format: "0x%04X", $0) }),
+            // ヘッダが 2 バイトあるのは 0xB010 だけ。他は表示しても意味がない。
+            ("header", message.command == 0xB010
+                ? BC768Record.header(of: message.payload).map { String(format: "0x%04X", $0) }
+                : nil),
             ("fields", String(result.fields.count)),
             ("unparsed", {
                 if case let .partial(_, unparsed) = result { return unparsed.hexString }
