@@ -85,14 +85,13 @@ Health Planet が使っている識別子が必要になる（`docs/protocol.md`
 ## GUI
 
 ```bash
-# GUI は ~/.config/bc768-probe/env を読む（Finder 起動ではカレントディレクトリが使えないため）
-mkdir -p ~/.config/bc768-probe && cp .env ~/.config/bc768-probe/env
-
 ./scripts/make-app.sh
 open .build/BC-768.app
 ```
 
-「入力」「確認」「送信（CSV 書き出し）」のボタンと、取り込んだ記録の表がある。
+「設定」「入力」「確認」「送信（CSV 書き出し）」のボタンと、取り込んだ記録の表がある。
+設定は GUI の「BC-768 を登録する」から行える（UUID は自動で割り出す）。
+CLI と同じ `~/.config/bc768-probe/env` を読み書きする。
 記録は `~/Library/Application Support/bc768-probe/records.jsonl` に貯まり、CLI の `--out` と同じ形式。
 
 ## BC-768 側の操作

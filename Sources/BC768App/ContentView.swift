@@ -7,6 +7,7 @@ struct ContentView: View {
     @ObservedObject var store: MeasurementStore
     @ObservedObject var controller: SessionController
     @State private var showsLog = false
+    @State private var showsSetup = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,6 +29,9 @@ struct ContentView: View {
         }
         .frame(minWidth: 780, minHeight: 480)
         .onAppear { controller.checkConfiguration() }
+        .sheet(isPresented: $showsSetup) {
+            SetupView { controller.checkConfiguration() }
+        }
     }
 
     // MARK: - 操作
@@ -74,6 +78,8 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(hint).font(.callout).textSelection(.enabled)
                 HStack {
+                    Button("BC-768 を登録する") { showsSetup = true }
+                        .buttonStyle(.borderedProminent)
                     Button("置き場所を開く") {
                         let directory = (controller.configPath as NSString).deletingLastPathComponent
                         try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
@@ -157,6 +163,8 @@ struct ContentView: View {
             Text("* は推定値")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
+            Button("設定") { showsSetup = true }
+                .buttonStyle(.link)
             Button(showsLog ? "ログを隠す" : "ログを表示") { showsLog.toggle() }
                 .buttonStyle(.link)
             Button("保存先を開く") {

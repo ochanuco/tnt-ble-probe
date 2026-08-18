@@ -84,33 +84,18 @@ enum DiscoverCommand {
     /// 既存のクライアント識別子は残したまま UUID だけ書き換える。
     private static func save(layout: BC768Layout) {
         let path = ConfigLoader.userConfigPath
-        let existingClientID = currentClientID(path: path)
-        let contents = layout.envFileContents(clientID: existingClientID)
+        let clientID = ConfigWriter.existingClientID(path: path)
         do {
-            let directory = (path as NSString).deletingLastPathComponent
-            try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
-            try contents.write(toFile: path, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+            try ConfigWriter.save(layout: layout, clientID: clientID, to: path)
             Log.info("")
             Log.info("書き出しました: \(path)")
-            if existingClientID == nil || existingClientID?.isEmpty == true {
+            if clientID == nil {
                 Log.error("BC768_CLIENT_ID が空です。Health Planet が使っている識別子を書き足さないと通信できません。")
             } else {
                 Log.info("既存の BC768_CLIENT_ID は残してあります。")
             }
         } catch {
-            Log.error("書き出せませんでした: \(error.localizedDescription)")
+            Log.error("\(error)")
         }
-    }
-
-    private static func currentClientID(path: String) -> String? {
-        if let value = ProcessInfo.processInfo.environment["BC768_CLIENT_ID"], !value.isEmpty { return value }
-        guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
-        for line in contents.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("BC768_CLIENT_ID=") else { continue }
-            return String(trimmed.dropFirst("BC768_CLIENT_ID=".count))
-        }
-        return nil
     }
 }

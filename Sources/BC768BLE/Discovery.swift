@@ -104,6 +104,8 @@ public enum BC768DiscoveryEvent {
 public final class BC768DiscoverySession: NSObject {
     /// 名前による絞り込み（部分一致、大文字小文字を無視）。nil ならすべて。
     private let nameFilter: String?
+    /// 接続先を識別子で指定する。GUI のように一覧から選ばせる場合に使う。
+    private let targetID: UUID?
     private let scanTimeout: Double
     /// 接続して中身まで調べるか。false なら scan だけ。
     private let inspects: Bool
@@ -120,12 +122,14 @@ public final class BC768DiscoverySession: NSObject {
 
     public init(
         nameFilter: String? = nil,
+        targetID: UUID? = nil,
         scanTimeout: Double = 20,
         inspects: Bool = true,
         queue: DispatchQueue = DispatchQueue(label: "com.ochanuco.bc768.discovery"),
         onEvent: @escaping (BC768DiscoveryEvent) -> Void
     ) {
         self.nameFilter = nameFilter
+        self.targetID = targetID
         self.scanTimeout = scanTimeout
         self.inspects = inspects
         self.queue = queue
@@ -212,7 +216,10 @@ extension BC768DiscoverySession: CBCentralManagerDelegate {
         guard seen[peripheral.identifier] == nil else { return }
         seen[peripheral.identifier] = found
 
-        if let nameFilter {
+        // 接続先が指定されていればそれだけを対象にする。
+        if let targetID {
+            guard peripheral.identifier == targetID else { return }
+        } else if let nameFilter {
             let haystack = [found.name, found.localName].compactMap { $0 }.joined(separator: " ")
             guard haystack.range(of: nameFilter, options: .caseInsensitive) != nil else { return }
         }
@@ -226,7 +233,7 @@ extension BC768DiscoverySession: CBCentralManagerDelegate {
         ])
         onEvent(.peripheral(found))
 
-        guard inspects, target == nil else { return }
+        guard inspects || targetID != nil, target == nil else { return }
         scanTimeoutItem?.cancel()
         central.stopScan()
         target = peripheral

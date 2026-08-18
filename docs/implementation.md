@@ -18,6 +18,8 @@ Sources/BC768Protocol/            CoreBluetooth に依存しないプロトコ�
   Hex.swift                       hex 変換
 Sources/BC768BLE/                 CoreBluetooth を使うセッション層（CLI と GUI が共有）
   Session.swift                   scan / connect / discover / subscribe / handshake
+  Discovery.swift                 UUID を知らない状態からの探索と構成判定
+  ConfigWriter.swift              設定ファイルの書き出し
   Events.swift                    イベント（ログ・進捗・測定結果・完了）
   Configuration.swift             UUID とセッション設定
   Config.swift                    環境変数 / .env の読み込み
@@ -27,7 +29,9 @@ Sources/BC768BLE/                 CoreBluetooth を使うセッション層（CL
 Sources/BC768App/                 SwiftUI の GUI
   BC768AppMain.swift              エントリポイント
   ContentView.swift               ボタン・表・ログ
+  SetupView.swift                 探す → 調べる → 登録
   SessionController.swift         セッションの実行と状態
+  DiscoveryController.swift       端末の探索と設定の保存
   MeasurementStore.swift          JSON Lines への蓄積と CSV 書き出し
   Info.plist                      NSBluetoothAlwaysUsageDescription
 Sources/BC768Probe/
@@ -56,6 +60,7 @@ open .build/BC-768.app
 
 | ボタン | 動作 |
 | --- | --- |
+| 設定 | 探す → 調べる → 登録（`discover --save` 相当）|
 | 入力 | `measure` 相当。本体の「入力モード」を押して乗ると結果が入る |
 | 確認 | `sync` 相当。測定せず、保持されているデータを取り込む |
 | 送信 | 蓄積した記録を CSV で書き出す（スプレッドシート向け） |
@@ -72,7 +77,8 @@ chmod 600 ~/.config/bc768-probe/env
 ```
 
 設定が見つからない場合、GUI は起動時に案内を出し、測定系のボタンを押せないようにする。
-置き場所を開くボタンと再確認ボタンもそこに出る。
+そこから「BC-768 を登録する」で設定画面を開ける。UUID は自動で割り出すので、
+入力が要るのはクライアント識別子だけ。
 
 取り込んだ記録は `~/Library/Application Support/bc768-probe/records.jsonl` に貯まる。
 CLI の `--out` と同じ JSON Lines なので、同じファイルを指せば両方から扱える。
@@ -242,6 +248,10 @@ CoreBluetooth が返す順序はばらばらなので、必ず並べ替えてか
 
 `--save` は既存の `BC768_CLIENT_ID` を残したまま UUID だけ書き換える。
 識別子は機器に登録済みの値が必要で、自動生成できない（`docs/protocol.md` 参照）。
+
+GUI の「設定」からも同じことができる。`BC768DiscoverySession` と `ConfigWriter` を
+CLI と共有しているので、探索・構成判定・書き出しの挙動は完全に同じになる。
+GUI では一覧から端末を選べるよう、接続先を識別子で指定できるようにしてある。
 
 ## デコード
 
