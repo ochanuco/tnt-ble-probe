@@ -6,10 +6,12 @@ import Foundation
 /// `raw` には受信 payload と TLV をそのまま入れるので、あとで解釈をやり直せる。
 public struct BC768MeasurementRecord: Codable {
     public struct Estimated: Codable {
-        public let basalMetabolismKcal: Double?
         public let metabolicAgeYears: Double?
         public let visceralFatLevel: Double?
-        public let bodyWaterPercent: Double?
+        /// BIA の抵抗成分（Ω）と推定。
+        public let resistanceOhm: Double?
+        /// BIA のリアクタンス成分（Ω）と推定。観測値は負。
+        public let reactanceOhm: Double?
     }
 
     public struct Check: Codable {
@@ -48,6 +50,9 @@ public struct BC768MeasurementRecord: Codable {
     public let bodyFatPercent: Double?
     public let muscleMassKg: Double?
     public let boneMassKg: Double?
+    /// 体水分量。除脂肪量の 72〜74% になることで「率」ではなく「量」と確認した。
+    public let bodyWaterKg: Double?
+    public let basalMetabolismKcal: Double?
 
     public let estimated: Estimated
     public let checks: [Check]
@@ -83,12 +88,14 @@ public struct BC768MeasurementRecord: Codable {
         bodyFatPercent = BC768Field.scaledValue(fields, tag: 0x6022)
         muscleMassKg = BC768Field.scaledValue(fields, tag: 0x6023)
         boneMassKg = BC768Field.scaledValue(fields, tag: 0x6029)
+        bodyWaterKg = BC768Field.scaledValue(fields, tag: 0x6F21)
+        basalMetabolismKcal = BC768Field.scaledValue(fields, tag: 0x6027)
 
         estimated = Estimated(
-            basalMetabolismKcal: BC768Field.scaledValue(fields, tag: 0x6027),
             metabolicAgeYears: BC768Field.scaledValue(fields, tag: 0x6028),
             visceralFatLevel: BC768Field.scaledValue(fields, tag: 0x6025),
-            bodyWaterPercent: BC768Field.scaledValue(fields, tag: 0x6F21)
+            resistanceOhm: BC768Field.scaledValue(fields, tag: 0x614B),
+            reactanceOhm: BC768Field.scaledValue(fields, tag: 0x614C)
         )
 
         checks = BC768Consistency.checks(for: fields).map {

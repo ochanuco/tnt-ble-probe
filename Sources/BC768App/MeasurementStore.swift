@@ -88,7 +88,7 @@ final class MeasurementStore: ObservableObject {
 
     /// スプレッドシートへ貼れる形にする。
     func csv() -> String {
-        var lines = ["measured_at,retrieved_at,weight_kg,body_fat_percent,muscle_mass_kg,bone_mass_kg,bmi,basal_metabolism_kcal,metabolic_age,visceral_fat_level,body_water_percent"]
+        var lines = ["measured_at,retrieved_at,weight_kg,body_fat_percent,muscle_mass_kg,bone_mass_kg,bmi,body_water_kg,basal_metabolism_kcal,metabolic_age,visceral_fat_level"]
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         for entry in entries.sorted(by: { $0.sortKey < $1.sortKey }) {
@@ -98,8 +98,8 @@ final class MeasurementStore: ObservableObject {
                 record.retrievedAt,
                 format(record.weightKg), format(record.bodyFatPercent),
                 format(record.muscleMassKg), format(record.boneMassKg), format(record.bmi),
-                format(record.estimated.basalMetabolismKcal), format(record.estimated.metabolicAgeYears),
-                format(record.estimated.visceralFatLevel), format(record.estimated.bodyWaterPercent),
+                format(record.bodyWaterKg), format(record.basalMetabolismKcal),
+                format(record.estimated.metabolicAgeYears), format(record.estimated.visceralFatLevel),
             ]
             lines.append(columns.joined(separator: ","))
         }

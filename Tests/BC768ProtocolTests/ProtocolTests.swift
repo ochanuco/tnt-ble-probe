@@ -231,6 +231,30 @@ final class ConsistencyTests: XCTestCase {
     func testChecksAreSkippedWhenFieldsMissing() {
         XCTAssertTrue(BC768Consistency.checks(for: []).isEmpty)
     }
+
+    /// 体水分量は除脂肪量の 72〜74%。この関係が「率(%)」ではなく「量(kg)」だと決める根拠になる。
+    func testBodyWaterIsMassNotPercentage() {
+        var withWater = fields
+        // 除脂肪量 56.0 kg に対して体水分量 40.9 kg（比 73.0%）
+        withWater.append(BC768TLVField(tag: 0x6F21, value: Data([0x01, 0x99])))
+        let checks = BC768Consistency.checks(for: withWater)
+        guard let water = checks.first(where: { $0.label.contains("体水分量") }) else {
+            return XCTFail("体水分量の検算が入っていない")
+        }
+        XCTAssertTrue(water.passed, water.description)
+        // 同じ値を「率」として扱うと 56.0 × 40.9% = 22.9 kg となり、比が 41% まで落ちて成立しない
+        XCTAssertEqual(water.computed, 0.730, accuracy: 0.005)
+    }
+
+    /// 基礎代謝は筋肉量に比例する（実測 30.13 kcal/kg）。
+    func testBasalMetabolismScalesWithMuscle() {
+        var withBMR = fields
+        // 筋肉量 52.90 kg × 30.13 ≒ 1594 kcal
+        withBMR.append(BC768TLVField(tag: 0x6027, value: Data([0x06, 0x3A])))
+        let checks = BC768Consistency.checks(for: withBMR)
+        let bmr = checks.first { $0.label.contains("基礎代謝") }
+        XCTAssertEqual(bmr?.passed, true)
+    }
 }
 
 /// 「取り出せるデータがあるか」「返ってきたレコードが有効か」の判定。
@@ -326,10 +350,12 @@ final class MeasurementRecordTests: XCTestCase {
 
     func testEstimatedValuesAreSeparated() throws {
         let dict = try record(days: 7305, halfSeconds: 86400, sendPending: true)
+        // 基礎代謝は検算できるのでトップレベル
+        XCTAssertEqual(dict["basalMetabolismKcal"] as? Double, 1600)
+        // 推定のままの項目は estimated 配下
         let estimated = try XCTUnwrap(dict["estimated"] as? [String: Any])
-        XCTAssertEqual(estimated["basalMetabolismKcal"] as? Double, 1600)
-        // 推定項目はトップレベルへ出さない
-        XCTAssertNil(dict["basalMetabolismKcal"])
+        XCTAssertNotNil(estimated)
+        XCTAssertNil(dict["metabolicAgeYears"])
     }
 
     func testTimestampIsNullWhenZero() throws {
@@ -354,7 +380,8 @@ final class MeasurementRecordTests: XCTestCase {
     func testChecksAreIncluded() throws {
         let dict = try record(days: 7305, halfSeconds: 86400, sendPending: true)
         let checks = try XCTUnwrap(dict["checks"] as? [[String: Any]])
-        XCTAssertEqual(checks.count, 2)
+        // BMI・除脂肪量・基礎代謝（体水分量はこの合成データに含めていない）
+        XCTAssertEqual(checks.count, 3)
         XCTAssertTrue(checks.allSatisfy { $0["passed"] as? Bool == true })
     }
 }

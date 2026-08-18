@@ -38,14 +38,14 @@ public enum BC768Field {
         0x6022: Definition("体脂肪率", divisor: 10, unit: "%", confirmed: true),
         0x6023: Definition("筋肉量", divisor: 100, unit: "kg", confirmed: true),
         0x6025: Definition("内臓脂肪レベル?", divisor: 10),
-        0x6027: Definition("基礎代謝?", unit: "kcal"),
+        0x6027: Definition("基礎代謝", unit: "kcal", confirmed: true),
         0x6028: Definition("体内年齢?", unit: "歳"),
         0x6029: Definition("推定骨量", divisor: 100, unit: "kg", confirmed: true),
         0x6056: Definition("BMI", divisor: 10, confirmed: true),
-        0x6F21: Definition("体水分率?", divisor: 10, unit: "%"),
-        0x6F22: Definition("インピーダンス?"),
-        0x614B: Definition("インピーダンス?", signed: true),
-        0x614C: Definition("インピーダンス?", signed: true),
+        0x6F21: Definition("体水分量", divisor: 10, unit: "kg", confirmed: true),
+        0x6F22: Definition("不明（ほぼ一定）"),
+        0x614B: Definition("抵抗 R?", divisor: 10, unit: "Ω", signed: true),
+        0x614C: Definition("リアクタンス Xc?", divisor: 10, unit: "Ω", signed: true),
     ]
 
     /// ログ表示用の 1 行を組み立てる。
@@ -114,6 +114,22 @@ public enum BC768Consistency {
                                  computed: weight * (1 - fatPercent / 100),
                                  received: muscle + bone,
                                  tolerance: 0.15))
+        }
+        // 体水分量は除脂肪組織の 72〜74%。この関係が成り立つことで
+        // 6F21 が「率(%)」ではなく「量(kg)」だと判断できる。
+        if let muscle, let bone, let water = BC768Field.scaledValue(fields, tag: 0x6F21) {
+            let lean = muscle + bone
+            results.append(Check(label: "体水分量 / 除脂肪量 = 0.72〜0.75",
+                                 computed: water / lean,
+                                 received: 0.735,
+                                 tolerance: 0.02))
+        }
+        // 基礎代謝は筋肉量に比例する（実測 30.13 kcal/kg、4 サンプルで ±0.02%）。
+        if let muscle, let bmr = BC768Field.scaledValue(fields, tag: 0x6027), muscle > 0 {
+            results.append(Check(label: "基礎代謝 / 筋肉量 = 30.1 kcal/kg",
+                                 computed: bmr / muscle,
+                                 received: 30.13,
+                                 tolerance: 0.3))
         }
         return results
     }
