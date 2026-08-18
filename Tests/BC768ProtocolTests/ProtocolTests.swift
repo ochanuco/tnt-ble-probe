@@ -404,3 +404,36 @@ final class NewMeasurementTests: XCTestCase {
         XCTAssertTrue(makeRecord(days: 7305, sendPending: nil).isNewMeasurement)
     }
 }
+
+/// 応答コードの解釈。コマンドが合っていても payload が拒否を示すことがある。
+final class ResponseStatusTests: XCTestCase {
+    func testOK() {
+        XCTAssertEqual(BC768ResponseStatus.status(command: 0x8003, payload: Data([0x00, 0x00])), .ok)
+        XCTAssertEqual(BC768ResponseStatus.status(command: 0x8010, payload: Data([0x00, 0x00])), .ok)
+    }
+
+    func testUnregisteredClient() {
+        // 新しく生成したクライアント識別子を送ると返る
+        XCTAssertEqual(BC768ResponseStatus.status(command: 0x8003, payload: Data([0x00, 0x01])), .unregisteredClient)
+    }
+
+    func testWrongMode() {
+        // 設定/通信ボタン長押しのモードで返る
+        XCTAssertEqual(BC768ResponseStatus.status(command: 0x8003, payload: Data([0x07, 0x01])), .wrongMode)
+    }
+
+    func testPendingDataIsNotAnError() {
+        // 0xB000 の 0001 は「データあり」であって拒否ではない
+        XCTAssertNil(BC768ResponseStatus.status(command: 0xB000, payload: Data([0x00, 0x01])))
+    }
+
+    func testDataResponsesAreIgnored() {
+        // データを返す応答は状態コードではない
+        let payload = Data((0..<43).map { UInt8($0) })
+        XCTAssertNil(BC768ResponseStatus.status(command: 0x9000, payload: payload))
+    }
+
+    func testUnknownCode() {
+        XCTAssertEqual(BC768ResponseStatus.status(command: 0x8010, payload: Data([0x12, 0x34])), .unknown(0x1234))
+    }
+}

@@ -151,3 +151,47 @@ public enum BC768Record {
         }
     }
 }
+
+/// 応答 payload が示す状態。
+///
+/// 2 バイトの payload を返す応答は状態コードで、`0x0000` が正常。
+/// `0xB000` だけは `0x0001` が「送信対象データあり」を意味するため別扱いにする。
+public enum BC768ResponseStatus: Equatable {
+    case ok
+    /// 0x8003 payload=0001。BC-768 に登録されていないクライアント識別子。
+    case unregisteredClient
+    /// 0x8003 payload=0701。BC-768 が設定/通信モードで、セッションを受け付けない。
+    case wrongMode
+    /// 意味の分かっていない状態コード。
+    case unknown(UInt16)
+
+    public var isOK: Bool { self == .ok }
+
+    public var explanation: String {
+        switch self {
+        case .ok:
+            return "正常"
+        case .unregisteredClient:
+            return "このクライアント識別子は BC-768 に登録されていません。Health Planet が使っている識別子が必要です"
+        case .wrongMode:
+            return "BC-768 が設定/通信モードです。電源または入力モードで起動し直してください"
+        case let .unknown(code):
+            return String(format: "未知の状態コード 0x%04X", code)
+        }
+    }
+
+    /// 応答を解釈する。データを返す応答（0x8020 など）は対象外なので nil を返す。
+    public static func status(command: UInt16, payload: Data) -> BC768ResponseStatus? {
+        // 0xB000 は 0000/0001 のどちらも正常。判定は BC768Record.hasPendingData が担う。
+        guard command != 0xB000 else { return nil }
+        guard payload.count == 2 else { return nil }
+        let base = payload.startIndex
+        let code = UInt16(payload[base]) << 8 | UInt16(payload[base + 1])
+        switch code {
+        case 0x0000: return .ok
+        case 0x0001 where command == 0x8003: return .unregisteredClient
+        case 0x0701 where command == 0x8003: return .wrongMode
+        default: return .unknown(code)
+        }
+    }
+}

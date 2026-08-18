@@ -787,6 +787,20 @@ extension BC768Session {
             return
         }
         responseTimeoutItem?.cancel()
+
+        // 応答コマンドが合っていても、payload が拒否を示していることがある。
+        if let status = BC768ResponseStatus.status(command: message.command, payload: message.payload),
+           !status.isOK {
+            logEvent("RESPONSE_REJECTED", [
+                ("step", step.label),
+                ("command", String(format: "0x%04X", message.command)),
+                ("payload", message.payload.hexString),
+                ("reason", status.explanation),
+            ], level: .error)
+            finish(.failed(status.explanation))
+            return
+        }
+
         // 0xB000 の payload が「取り出せるデータの有無」を示す。
         if message.command == 0xB000 {
             let pending = BC768Record.hasPendingData(message.payload)
