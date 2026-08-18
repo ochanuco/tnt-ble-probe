@@ -99,7 +99,7 @@ final class MeasurementStore: ObservableObject {
                 format(record.weightKg), format(record.bodyFatPercent),
                 format(record.muscleMassKg), format(record.boneMassKg), format(record.bmi),
                 format(record.bodyWaterKg), format(record.basalMetabolismKcal),
-                format(record.estimated.metabolicAgeYears), format(record.estimated.visceralFatLevel),
+                format(record.metabolicAgeYears), format(record.visceralFatLevel),
             ]
             lines.append(columns.joined(separator: ","))
         }

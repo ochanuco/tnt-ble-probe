@@ -130,7 +130,7 @@ struct ContentView: View {
             TableColumn("BMI") { Text(format($0.record.bmi, unit: "", digits: 1)) }
             TableColumn("体水分量") { Text(format($0.record.bodyWaterKg, unit: "kg", digits: 1)) }
             TableColumn("基礎代謝") { Text(format($0.record.basalMetabolismKcal, unit: "kcal", digits: 0)) }
-            TableColumn("体内年齢*") { Text(format($0.record.estimated.metabolicAgeYears, unit: "歳", digits: 0)) }
+            TableColumn("体内年齢") { Text(format($0.record.metabolicAgeYears, unit: "歳", digits: 0)) }
         }
     }
 

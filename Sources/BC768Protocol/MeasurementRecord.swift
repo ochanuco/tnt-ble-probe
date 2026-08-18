@@ -6,8 +6,6 @@ import Foundation
 /// `raw` には受信 payload と TLV をそのまま入れるので、あとで解釈をやり直せる。
 public struct BC768MeasurementRecord: Codable {
     public struct Estimated: Codable {
-        public let metabolicAgeYears: Double?
-        public let visceralFatLevel: Double?
         /// BIA の抵抗成分（Ω）と推定。
         public let resistanceOhm: Double?
         /// BIA のリアクタンス成分（Ω）と推定。観測値は負。
@@ -53,6 +51,8 @@ public struct BC768MeasurementRecord: Codable {
     /// 体水分量。除脂肪量の 72〜74% になることで「率」ではなく「量」と確認した。
     public let bodyWaterKg: Double?
     public let basalMetabolismKcal: Double?
+    public let metabolicAgeYears: Double?
+    public let visceralFatLevel: Double?
 
     public let estimated: Estimated
     public let checks: [Check]
@@ -91,9 +91,10 @@ public struct BC768MeasurementRecord: Codable {
         bodyWaterKg = BC768Field.scaledValue(fields, tag: 0x6F21)
         basalMetabolismKcal = BC768Field.scaledValue(fields, tag: 0x6027)
 
+        metabolicAgeYears = BC768Field.scaledValue(fields, tag: 0x6028)
+        visceralFatLevel = BC768Field.scaledValue(fields, tag: 0x6025)
+
         estimated = Estimated(
-            metabolicAgeYears: BC768Field.scaledValue(fields, tag: 0x6028),
-            visceralFatLevel: BC768Field.scaledValue(fields, tag: 0x6025),
             resistanceOhm: BC768Field.scaledValue(fields, tag: 0x614B),
             reactanceOhm: BC768Field.scaledValue(fields, tag: 0x614C)
         )
