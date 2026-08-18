@@ -373,7 +373,7 @@ extension BC768Client: CBPeripheralDelegate {
             subscribedCount += 1
             if subscribedCount == targetNotifyChars.count {
                 Log.info("Notify 購読が \(subscribedCount) 件すべて有効になりました。")
-                if options.command == .handshake {
+                if options.command == .handshake || options.command == .measure {
                     if options.handshakeDelay > 0 {
                         Log.info("\(options.handshakeDelay) 秒待ってから handshake を開始します。")
                         queue.asyncAfter(deadline: .now() + options.handshakeDelay) { [weak self] in
@@ -551,7 +551,10 @@ extension BC768Client {
             shutdown(exitCode: 2)
             return
         }
-        steps = HandshakeStep.sequence(with: handshake, labels: options.steps)
+        let labels = options.steps ?? (options.command == .measure
+            ? HandshakeStep.measureLabels
+            : HandshakeStep.defaultLabels)
+        steps = HandshakeStep.sequence(with: handshake, labels: labels)
         stepIndex = 0
         reassembler.reset()
 
@@ -592,6 +595,10 @@ extension BC768Client {
         }
         let fragments = BC768Fragment.split(encoded, seq: seq, maxPayload: Self.fragmentSize)
 
+        // 0x0010 は日時設定なので、何を送ったか読める形でも残す。
+        let datetime = step.message.command == 0x0010
+            ? BC768DateTime.decode(step.message.payload).map { Log.timestamp($0) }
+            : nil
         Log.event("TX_MESSAGE", [
             ("step", step.label),
             ("command", String(format: "0x%04X", step.message.command)),
@@ -599,8 +606,12 @@ extension BC768Client {
             ("length", String(encoded.count)),
             ("seq", String(format: "0x%02X", seq)),
             ("fragments", String(fragments.count)),
+            ("datetime", datetime),
             ("hex", encoded.hexString),
         ])
+        if step.label == "measure" {
+            Log.info("測定を開始します。BC-768 に乗ってください（最大 \(Int(step.timeout ?? options.responseTimeout)) 秒待ちます）。")
+        }
 
         guard let writeChar = activeWriteChar, let characteristic = discovered[writeChar.uuid] else { return }
         for (index, fragment) in fragments.enumerated() {
@@ -628,7 +639,8 @@ extension BC768Client {
             self.handleResponseTimeout(on: peripheral)
         }
         responseTimeoutItem = item
-        queue.asyncAfter(deadline: .now() + options.responseTimeout, execute: item)
+        let timeout = steps[stepIndex].timeout ?? options.responseTimeout
+        queue.asyncAfter(deadline: .now() + timeout, execute: item)
     }
 
     private func handleResponseTimeout(on peripheral: CBPeripheral) {
@@ -654,7 +666,8 @@ extension BC768Client {
     }
 
     func handleHandshakeResponse(_ message: BC768Message, on peripheral: CBPeripheral) {
-        guard options.command == .handshake, stepIndex < steps.count, !handshakeFinished else { return }
+        guard options.command == .handshake || options.command == .measure,
+              stepIndex < steps.count, !handshakeFinished else { return }
         let step = steps[stepIndex]
         guard message.command == step.expected else {
             Log.event("UNEXPECTED_RESPONSE", [

@@ -64,8 +64,8 @@ Bluetooth の使用許可は実行するターミナルアプリに紐づく。�
 
 | 環境変数 | 用途 |
 | --- | --- |
-| `BC768_CLIENT_ID` | `0x0003` で送るクライアント識別子（36 文字の UUID 文字列） |
-| `BC768_CMD_0010_PAYLOAD` | `0x0010` で送る payload（hex） |
+| `BC768_CLIENT_ID` | `0x0003` で送るクライアント識別子（36 文字の UUID 文字列）。必須 |
+| `BC768_CMD_0010_PAYLOAD` | `0x0010` の payload を固定したいときだけ設定する。省略時は現在時刻から生成 |
 
 `scan` は `SERVICE_UUID` のみ、`probe` は 6 つすべてを必須とする。不足時はどの論理 UUID が足りないかと
 探索したファイルパスを表示して終了コード 2 で終わる。
@@ -81,6 +81,7 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | `scan` | 広告情報を表示するだけ。接続しない |
 | `probe` | scan → connect → discover services → discover characteristics → subscribe → wait |
 | `handshake` | probe に続けて、HCI ログで確認済みのハンドシェイクを送る |
+| `measure` | handshake に続けて測定を開始し、結果を受け取る |
 
 | オプション | 既定 | 内容 |
 | --- | --- | --- |
@@ -131,10 +132,18 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 
 ```text
 identify     0x0003 <client id>   → 0x8003
-session      0x0010 <payload>     → 0x8010
+session      0x0010 <日時>        → 0x8010     現在時刻から生成する
 device-info  0x0020 00            → 0x8020
 read-data    0x1000 00            → 0x9000
 finish       0x0001 00            → 0x8001
+```
+
+`measure` はさらに以下を挟む（`--steps` で個別に指定もできる）。
+
+```text
+measure      0x2010 00            → 0xA010     応答待ち 120 秒。この間に体組成計へ乗る
+complete     0x3000 00            → 0xB000
+result       0x3010 01            → 0xB010     測定結果
 ```
 
 - 送信は Write Without Response。フラグメントは Android と同じ 20 バイト固定で、15ms 間隔で送る。
@@ -143,6 +152,8 @@ finish       0x0001 00            → 0x8001
 - `--write-char auto`（既定）では `WRITE_CHAR_1` に送り、最初のステップで応答がなければ
   `WRITE_CHAR_2` へ切り替えて 1 度だけ再試行する。HCI ログから handle と UUID の対応が取れないため。
 - `0x1002`（データ書き込み / 設定）は BC-768 の状態を変える可能性があるため**送らない**。
+- `0x0010` は日時設定コマンドなので、固定値ではなく実行時の現在時刻から組み立てる
+  （`docs/protocol.md` の日時エンコードを参照）。
 
 ## 安全性
 

@@ -91,3 +91,56 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(reassembler.append(fragments[0]), message)
     }
 }
+
+/// 日時エンコードの期待値は Android HCI キャプチャの実測から取っている
+/// （日時そのものは個体情報ではない）。
+final class DateTimeTests: XCTestCase {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        return calendar
+    }
+
+    private func date(_ y: Int, _ mo: Int, _ d: Int, _ h: Int, _ mi: Int, _ s: Int) -> Date {
+        calendar.date(from: DateComponents(year: y, month: mo, day: d, hour: h, minute: mi, second: s))!
+    }
+
+    func testEncodeObservedSamples() {
+        // 2026-08-18 23:39:59 → 6a32=0x25fe (9726 日), 6a33=0x02999e (170398 = 85199 秒 × 2)
+        XCTAssertEqual(
+            BC768DateTime.encode(date(2026, 8, 18, 23, 39, 59), calendar: calendar)?.hexString,
+            "6a3225fe6a3302999e"
+        )
+        // 2026-08-19 01:53:08 → 日が 1 増え、時刻カウンタは当日 0 時起点に戻る
+        XCTAssertEqual(
+            BC768DateTime.encode(date(2026, 8, 19, 1, 53, 8), calendar: calendar)?.hexString,
+            "6a3225ff6a33003508"
+        )
+        // 2026-08-19 01:50:07
+        XCTAssertEqual(
+            BC768DateTime.encode(date(2026, 8, 19, 1, 50, 7), calendar: calendar)?.hexString,
+            "6a3225ff6a3300339e"
+        )
+    }
+
+    func testEncodeStartOfEpoch() {
+        XCTAssertEqual(
+            BC768DateTime.encode(date(2000, 1, 1, 0, 0, 0), calendar: calendar)?.hexString,
+            "6a3200006a33000000"
+        )
+    }
+
+    func testRoundTrip() {
+        for sample in [date(2026, 8, 18, 23, 39, 59), date(2026, 1, 1, 0, 0, 0), date(2030, 12, 31, 23, 59, 59)] {
+            let encoded = BC768DateTime.encode(sample, calendar: calendar)
+            XCTAssertNotNil(encoded)
+            let decoded = try? XCTUnwrap(BC768DateTime.decode(encoded!, calendar: calendar))
+            XCTAssertEqual(decoded?.timeIntervalSince1970 ?? -1, sample.timeIntervalSince1970, accuracy: 0.5)
+        }
+    }
+
+    func testPayloadLengthMatchesObserved() {
+        // 実測の 0x0010 payload は 9 バイト。
+        XCTAssertEqual(BC768DateTime.encode(date(2026, 8, 19, 1, 53, 8), calendar: calendar)?.count, 9)
+    }
+}

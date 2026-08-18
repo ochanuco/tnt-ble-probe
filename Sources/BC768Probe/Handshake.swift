@@ -9,18 +9,39 @@ struct HandshakeStep {
     let message: BC768Message
     /// 期待する応答コマンド。
     let expected: UInt16
+    /// このステップ固有の応答待ち秒数。nil なら共通設定を使う。
+    let timeout: Double?
 
-    static let knownLabels = ["identify", "session", "device-info", "read-data", "finish"]
-
-    /// `labels` を渡すと、その順序どおりに絞り込む（切り分け実験用）。
-    static func sequence(with handshake: HandshakeConfig, labels: [String]? = nil) -> [HandshakeStep] {
-        let all = allSteps(with: handshake)
-        guard let labels else { return all }
-        return labels.compactMap { label in all.first { $0.label == label } }
+    init(label: String, message: BC768Message, expected: UInt16, timeout: Double? = nil) {
+        self.label = label
+        self.message = message
+        self.expected = expected
+        self.timeout = timeout
     }
 
-    private static func allSteps(with handshake: HandshakeConfig) -> [HandshakeStep] {
-        [
+    static let knownLabels = [
+        "identify", "session", "device-info", "read-data",
+        "measure", "complete", "result", "finish",
+    ]
+
+    /// 既定のハンドシェイク（測定は行わない）。
+    static let defaultLabels = ["identify", "session", "device-info", "read-data", "finish"]
+    /// 測定まで通す一連の流れ。HCI キャプチャで測定に成功したセッションと同じ順序。
+    static let measureLabels = [
+        "identify", "session", "device-info", "read-data",
+        "measure", "complete", "result", "finish",
+    ]
+
+    static func sequence(with handshake: HandshakeConfig, labels: [String]?, now: Date = Date()) -> [HandshakeStep] {
+        let all = allSteps(with: handshake, now: now)
+        let wanted = labels ?? defaultLabels
+        return wanted.compactMap { label in all.first { $0.label == label } }
+    }
+
+    private static func allSteps(with handshake: HandshakeConfig, now: Date) -> [HandshakeStep] {
+        // 0x0010 は日時設定。既定では現在時刻から組み立てる（固定値を送ると古い日時になる）。
+        let sessionPayload = handshake.sessionPayload ?? BC768DateTime.encode(now) ?? Data()
+        return [
             HandshakeStep(
                 label: "identify",
                 message: BC768Message(command: 0x0003, payload: Data(handshake.clientID.utf8)),
@@ -28,7 +49,7 @@ struct HandshakeStep {
             ),
             HandshakeStep(
                 label: "session",
-                message: BC768Message(command: 0x0010, payload: handshake.sessionPayload),
+                message: BC768Message(command: 0x0010, payload: sessionPayload),
                 expected: 0x8010
             ),
             HandshakeStep(
@@ -40,6 +61,24 @@ struct HandshakeStep {
                 label: "read-data",
                 message: BC768Message(command: 0x1000, payload: Data([0x00])),
                 expected: 0x9000
+            ),
+            // 測定の開始。Android では応答まで 9〜12 秒かかっていた（この間に体組成計へ乗る）。
+            HandshakeStep(
+                label: "measure",
+                message: BC768Message(command: 0x2010, payload: Data([0x00])),
+                expected: 0xA010,
+                timeout: 120
+            ),
+            HandshakeStep(
+                label: "complete",
+                message: BC768Message(command: 0x3000, payload: Data([0x00])),
+                expected: 0xB000
+            ),
+            // 測定結果の取得。payload は観測値どおり 0x01。
+            HandshakeStep(
+                label: "result",
+                message: BC768Message(command: 0x3010, payload: Data([0x01])),
+                expected: 0xB010
             ),
             HandshakeStep(
                 label: "finish",

@@ -4,6 +4,7 @@ enum Command: String {
     case scan
     case probe
     case handshake
+    case measure
 }
 
 /// handshake の送信先 Characteristic。実機で確かめるまで確定できないため選べるようにしてある。
@@ -58,6 +59,7 @@ struct Options {
       scan       BC-768 候補を探索して広告情報を表示する
       probe      scan → connect → discover → subscribe → wait を実行する
       handshake  probe に続けて、HCI ログで確認済みのハンドシェイクを送る
+      measure    handshake に続けて測定を開始し、結果を受け取る
 
     OPTIONS:
       --debug             DEBUG ログを有効にする

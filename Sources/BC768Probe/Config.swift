@@ -33,8 +33,8 @@ struct NamedUUID {
 struct HandshakeConfig {
     /// 0x0003 で送るクライアント識別子（36 文字の UUID 文字列）。
     let clientID: String
-    /// 0x0010 で送る payload。
-    let sessionPayload: Data
+    /// 0x0010 で送る payload。nil なら実行時に現在時刻から組み立てる。
+    let sessionPayload: Data?
 }
 
 struct Config {
@@ -143,12 +143,17 @@ enum ConfigLoader {
             }
             let clientIDKey = "BC768_CLIENT_ID"
             let sessionKey = "BC768_CMD_0010_PAYLOAD"
-            let missingHandshake = [clientIDKey, sessionKey].filter { value($0) == nil }
-            guard missingHandshake.isEmpty else {
-                throw ConfigError.missingHandshakeValue(keys: missingHandshake, searchedPaths: searchedPaths)
+            guard value(clientIDKey) != nil else {
+                throw ConfigError.missingHandshakeValue(keys: [clientIDKey], searchedPaths: searchedPaths)
             }
-            guard let sessionPayload = Data(hexString: value(sessionKey)!) else {
-                throw ConfigError.invalidHex(key: sessionKey, value: value(sessionKey)!)
+            // 0x0010 は日時設定なので既定では現在時刻から生成する。
+            // 設定されていれば固定値を使う（HCI ログとの比較実験用）。
+            var sessionPayload: Data?
+            if let raw = value(sessionKey) {
+                guard let parsed = Data(hexString: raw) else {
+                    throw ConfigError.invalidHex(key: sessionKey, value: raw)
+                }
+                sessionPayload = parsed
             }
             handshake = HandshakeConfig(clientID: value(clientIDKey)!, sessionPayload: sessionPayload)
         }

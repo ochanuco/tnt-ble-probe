@@ -23,7 +23,7 @@ do {
     config = try ConfigLoader.load(
         explicitPath: options.configPath,
         requireCharacteristics: options.command != .scan,
-        requireHandshake: options.command == .handshake
+        requireHandshake: options.command == .handshake || options.command == .measure
     )
 } catch {
     FileHandle.standardError.write(Data("\(error)\n".utf8))
