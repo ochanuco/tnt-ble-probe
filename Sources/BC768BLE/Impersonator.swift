@@ -172,6 +172,7 @@ extension BC768Impersonator: CBPeripheralManagerDelegate {
         didSubscribeTo characteristic: CBCharacteristic
     ) {
         if subscribedNotify == nil { subscribedNotify = characteristic.uuid }
+        logInfo("セントラルが接続して購読しました。ここまで来れば相手はこちらを BC-768 と見なしています。")
         logEvent("SUBSCRIBED", [
             ("central", central.identifier.uuidString),
             ("uuid", characteristic.uuid.uuidString),
@@ -186,6 +187,19 @@ extension BC768Impersonator: CBPeripheralManagerDelegate {
         didUnsubscribeFrom characteristic: CBCharacteristic
     ) {
         logEvent("UNSUBSCRIBED", [("uuid", characteristic.uuid.uuidString)])
+    }
+
+    /// Read が来たら少なくとも接続はできている。何も返さないと相手はエラーを受け取るので応答する。
+    /// CBPeripheralManager には接続そのものを知る手段がないため、接触の有無を測る数少ない手がかり。
+    public func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
+        logEvent("RX_READ", [
+            ("central", request.central.identifier.uuidString),
+            ("uuid", request.characteristic.uuid.uuidString),
+            ("logical", config.logicalName(for: request.characteristic.uuid)),
+            ("offset", String(request.offset)),
+        ])
+        request.value = Data()
+        peripheral.respond(to: request, withResult: .success)
     }
 
     public func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
