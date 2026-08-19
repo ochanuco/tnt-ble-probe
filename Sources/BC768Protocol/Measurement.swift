@@ -45,10 +45,16 @@ public enum BC768Field {
         0x6056: Definition("BMI", divisor: 10, confirmed: true),
         0x6F21: Definition("体水分量", divisor: 10, unit: "kg", confirmed: true),
         0x6F22: Definition("不明（ほぼ一定）"),
-        // Health Planet に「筋肉スコア」という項目がある。6024 と 6077 のどちらかが該当するが、
-        // どの測定でも両方 3 のままなので区別できていない。
-        0x6024: Definition("判定値または筋肉スコア?"),
-        0x6077: Definition("判定値または筋肉スコア?"),
+        // 判定値らしい小さい整数は、対応する測定値の直後に並んでいる。
+        // 6024 は 8 サンプル中 1 つだけ 2 に落ちており、筋肉量 62.0 kg を境に切り替わっていた。
+        // 同じ候補だった 6077 と 605A はどのサンプルでも動かない。
+        0x6024: Definition("筋肉スコア"),
+        0x6077: Definition("不明（観測値は常に 3）"),
+        0x605A: Definition("不明（観測値は常に 4）"),
+        0x6070: Definition("体脂肪率の判定?"),
+        0x607D: Definition("内臓脂肪レベルの判定?"),
+        // 基礎代謝が 1875 kcal 付近で 7 と 8 が入れ替わる。段階の意味は不明。
+        0x602F: Definition("基礎代謝の判定?"),
         0x614B: Definition("抵抗 R?", divisor: 10, unit: "Ω", signed: true),
         0x614C: Definition("リアクタンス Xc?", divisor: 10, unit: "Ω", signed: true),
     ]
