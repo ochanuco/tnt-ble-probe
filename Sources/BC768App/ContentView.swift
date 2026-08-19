@@ -142,8 +142,8 @@ struct ContentView: View {
         TableColumn("筋肉量") { Text(format($0.record.muscleMassKg, unit: "kg", digits: 2)) }
             .width(min: 74)
         // 6024 を筋肉スコアと読んでいるが、アプリ表示との答え合わせは済んでいない。
-        TableColumn("筋肉スコア†") { Text(format($0.record.muscleScore, unit: "", digits: 0)) }
-            .width(min: 80)
+        TableColumn("筋肉スコア") { Text(format($0.record.muscleScore, unit: "", digits: 0)) }
+            .width(min: 74)
         TableColumn("推定骨量") { Text(format($0.record.boneMassKg, unit: "kg", digits: 2)) }
             .width(min: 74)
     }
@@ -192,7 +192,7 @@ struct ContentView: View {
         HStack {
             Text("\(store.entries.count) 件")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("* 体水分量 ÷ 体重 の計算値 / † タグの対応が未確定")
+            Text("* 体水分量 ÷ 体重 の計算値")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
             Button("設定") { showsSetup = true }
