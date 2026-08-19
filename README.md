@@ -82,6 +82,33 @@ bc768-probe discover --name TNT --save
 **クライアント識別子だけは手当てが要る。** BC-768 に登録済みの値でないと拒否されるため、
 Health Planet が使っている識別子が必要になる（`docs/protocol.md` の「0x8003 の応答コード」を参照）。
 
+識別子は `0x0003` の payload に ASCII でそのまま乗っているので、
+Android の HCI キャプチャ（`adb bugreport` の btsnoop）から読み取れる。
+
+もうひとつの手として、**Mac を BC-768 に見せかけて Health Planet から受け取る**方法がある。
+
+```bash
+# BC-768 本体の電源は切っておく
+bc768-probe impersonate
+```
+
+Service UUID と 5 本の Characteristic を持つ Peripheral として `TNT_BW` の名前で広告し、
+Health Planet が送ってきた `0x0003` の payload をそのまま表示する。
+
+```text
+[CLIENT_ID] value=... length=36
+クライアント識別子を受け取りました:
+  BC768_CLIENT_ID=...
+```
+
+`--reply` を付けると観測済みの応答（`0x8003` / `0x8010` / `0xB000` / `0x8001` の `0000`）を返し、
+やり取りを先へ進める。デバイス情報とユーザー設定の応答は個体ごとの値なので用意していない。
+
+**BC-768 本体へは一切書き込まない。** 通信相手は Android アプリだけ。
+
+Health Planet が登録済みの BD アドレスでしか繋がない作りだと、Mac は無視される可能性がある。
+その場合はアプリの機器登録（新規スキャン）から接続させることになる。ここは未検証。
+
 ## GUI
 
 ```bash

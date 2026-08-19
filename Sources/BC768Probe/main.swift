@@ -32,6 +32,12 @@ if options.command == .discover {
 
 Log.info("bc768-probe command=\(options.command.rawValue) debug=\(options.debug)")
 
+// impersonate は Peripheral として動くので、必要なのは UUID だけ。
+// クライアント識別子は「こちらが送るもの」ではなく「相手から受け取るもの」。
+if options.command == .impersonate {
+    ImpersonateCommand.run(options)
+}
+
 // JSON は測定結果 (0xB010) を受け取ったときだけ出る。受信しないコマンドでは黙って空振りするので知らせる。
 if options.json || options.outputPath != nil, [.scan, .probe].contains(options.command) {
     Log.error("\(options.command.rawValue) は測定結果を受信しないため JSON は出力されません。measure か sync を使ってください。")
