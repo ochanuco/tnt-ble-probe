@@ -11,6 +11,11 @@ final class MeasurementStore: ObservableObject {
         let record: BC768MeasurementRecord
 
         var measuredAt: Date? { Self.parse(record.measuredAt) }
+        /// 体水分率。BC-768 は返してこないので体重で割って出す（端末の値ではない）。
+        var bodyWaterPercent: Double? {
+            guard let water = record.bodyWaterKg, let weight = record.weightKg, weight > 0 else { return nil }
+            return water / weight * 100
+        }
         var retrievedAt: Date? { Self.parse(record.retrievedAt) }
         /// 測定日時が無いレコードは取得日時で並べる。
         var sortKey: Date { measuredAt ?? retrievedAt ?? .distantPast }
@@ -92,7 +97,8 @@ final class MeasurementStore: ObservableObject {
 
     /// スプレッドシートへ貼れる形にする。
     func csv() -> String {
-        var lines = ["measured_at,retrieved_at,weight_kg,body_fat_percent,muscle_mass_kg,bone_mass_kg,bmi,body_water_kg,basal_metabolism_kcal,metabolic_age,visceral_fat_level"]
+        // body_water_percent_calc だけは計算値（BC-768 は率を返さない）。名前で区別できるようにしてある。
+        var lines = ["measured_at,retrieved_at,weight_kg,body_fat_percent,muscle_mass_kg,bone_mass_kg,bmi,body_water_kg,body_water_percent_calc,basal_metabolism_kcal,metabolic_age,visceral_fat_level"]
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         for entry in entries.sorted(by: { $0.sortKey < $1.sortKey }) {
@@ -102,7 +108,9 @@ final class MeasurementStore: ObservableObject {
                 record.retrievedAt,
                 format(record.weightKg), format(record.bodyFatPercent),
                 format(record.muscleMassKg), format(record.boneMassKg), format(record.bmi),
-                format(record.bodyWaterKg), format(record.basalMetabolismKcal),
+                // 割り算の結果をそのまま出すと桁が伸びるので、表示と同じ小数 1 桁に丸める。
+                format(record.bodyWaterKg), format(entry.bodyWaterPercent.map { ($0 * 10).rounded() / 10 }),
+                format(record.basalMetabolismKcal),
                 format(record.metabolicAgeYears), format(record.visceralFatLevel),
             ]
             lines.append(columns.joined(separator: ","))

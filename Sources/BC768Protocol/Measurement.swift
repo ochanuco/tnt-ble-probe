@@ -32,8 +32,9 @@ public enum BC768Field {
         0x6A3E: Definition("身長", divisor: 10, unit: "cm", confirmed: true),
         0x6A13: Definition("性別?"),
         0x6A15: Definition("ユーザー番号?"),
-        0x6A3C: Definition("生年月日?"),
-        0x604F: Definition("年齢?"),
+        0x6A3C: Definition("生年月日?（1900-01-01 起点の日数と見られる）"),
+        // 実際の年齢と合わないため「年齢」ではない。値 50 の意味は不明。
+        0x604F: Definition("不明"),
         0x6021: Definition("体重", divisor: 100, unit: "kg", confirmed: true),
         0x6022: Definition("体脂肪率", divisor: 10, unit: "%", confirmed: true),
         0x6023: Definition("筋肉量", divisor: 100, unit: "kg", confirmed: true),

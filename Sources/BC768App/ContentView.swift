@@ -27,7 +27,7 @@ struct ContentView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 880, minHeight: 480)
+        .frame(minWidth: 980, minHeight: 480)
         .onAppear { controller.checkConfiguration() }
         .sheet(isPresented: $showsSetup) {
             SetupView { controller.checkConfiguration() }
@@ -138,6 +138,9 @@ struct ContentView: View {
                 .width(min: 46, ideal: 52)
             TableColumn("体水分量") { Text(format($0.record.bodyWaterKg, unit: "kg", digits: 1)) }
                 .width(min: 74, ideal: 80)
+            // BC-768 は体水分「率」を返さない。体重で割った計算値だと分かる列名にしておく。
+            TableColumn("体水分率(計算)") { Text(format($0.bodyWaterPercent, unit: "%", digits: 1)) }
+                .width(min: 92, ideal: 98)
             TableColumn("基礎代謝") { Text(format($0.record.basalMetabolismKcal, unit: "kcal", digits: 0)) }
                 .width(min: 82, ideal: 88)
             TableColumn("体内年齢") { Text(format($0.record.metabolicAgeYears, unit: "歳", digits: 0)) }
@@ -172,7 +175,7 @@ struct ContentView: View {
         HStack {
             Text("\(store.entries.count) 件")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("* は推定値")
+            Text("* は推定値 / 体水分率は体水分量 ÷ 体重の計算値")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
             Button("設定") { showsSetup = true }
