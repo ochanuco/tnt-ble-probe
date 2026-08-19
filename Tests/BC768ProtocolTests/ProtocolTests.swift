@@ -479,3 +479,21 @@ final class ResponseStatusTests: XCTestCase {
         XCTAssertEqual(BC768ResponseStatus.status(command: 0x8010, payload: Data([0x12, 0x34])), .unknown(0x1234))
     }
 }
+
+/// 生年月日（6A3C）の起点。
+final class BirthDateTests: XCTestCase {
+    func testBirthDateEpochIsOneDayBeforeNineteenHundred() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+        func components(_ days: Int) throws -> DateComponents {
+            let date = try XCTUnwrap(BC768DateTime.birthDate(days: days, calendar: calendar))
+            return calendar.dateComponents([.year, .month, .day], from: date)
+        }
+        // 1 日目が 1900-01-01。測定日時（6A32）の数え方とは 1 日ずれている。
+        XCTAssertEqual(try components(1), DateComponents(year: 1900, month: 1, day: 1))
+        // 実測値 0x7FF0 = 32752 は 1989-09-02。
+        XCTAssertEqual(try components(32752), DateComponents(year: 1989, month: 9, day: 2))
+        // 0 は未設定として扱う。
+        XCTAssertNil(BC768DateTime.birthDate(days: 0, calendar: calendar))
+    }
+}

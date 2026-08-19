@@ -32,7 +32,7 @@ public enum BC768Field {
         0x6A3E: Definition("身長", divisor: 10, unit: "cm", confirmed: true),
         0x6A13: Definition("性別?"),
         0x6A15: Definition("ユーザー番号?"),
-        0x6A3C: Definition("生年月日?（1900-01-01 起点の日数と見られる）"),
+        0x6A3C: Definition("生年月日（1899-12-31 起点の日数）", confirmed: true),
         // 実際の年齢と合わないため「年齢」ではない。値 50 の意味は不明。
         0x604F: Definition("不明"),
         0x6021: Definition("体重", divisor: 100, unit: "kg", confirmed: true),
@@ -58,6 +58,15 @@ public enum BC768Field {
         guard let definition = definitions[field.tag] else {
             return "\(field.tagHex)=<未知> raw=\(field.value.hexString)"
         }
+        // 日数のままでは読めないので、カレンダー日付にして出す。
+        if field.tag == 0x6A3C, let date = BC768DateTime.birthDate(days: Int(field.unsignedValue)) {
+            return "\(definition.label)=\(Self.dayFormatter.string(from: date)) [tag=\(field.tagHex) raw=\(field.value.hexString)]"
+        }
+        if field.tag == 0x6A32,
+           let date = BC768DateTime.date(days: Int(field.unsignedValue), halfSeconds: 0),
+           field.unsignedValue > 0 {
+            return "\(definition.label)=\(Self.dayFormatter.string(from: date)) [tag=\(field.tagHex) raw=\(field.value.hexString)]"
+        }
         let raw = definition.signed ? Double(field.signedValue) : Double(field.unsignedValue)
         let scaled = raw / definition.divisor
         let formatted = definition.divisor == 1
@@ -66,6 +75,14 @@ public enum BC768Field {
         let mark = definition.confirmed ? "" : " (推定)"
         let unit = definition.unit.isEmpty ? "" : " \(definition.unit)"
         return "\(definition.label)=\(formatted)\(unit)\(mark) [tag=\(field.tagHex) raw=\(field.value.hexString)]"
+    }
+
+    /// 日付だけを出す整形。DateFormatter は Sendable ではないため都度作る（呼ばれる頻度は低い）。
+    private static var dayFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
     }
 
     private static func decimals(for divisor: Double) -> Int {
