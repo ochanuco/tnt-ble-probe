@@ -182,6 +182,7 @@ ATT Handle はハードコードせず、Characteristic は必ず UUID 経由で
 | `--pretty` | off | JSON を整形して出す |
 | `--out <path>` | - | JSON を 1 行ずつ追記する（JSON Lines） |
 | `--only-new` | off | 新規の測定結果のときだけ JSON を出す |
+| `--drain` | off | `sync` で、日時付きのレコードが返る限り `0x3010` を繰り返す |
 
 `probe` は開始時に `retrieveConnectedPeripherals(withServices:)` を確認する。Bonding 済みで macOS が既に接続を
 保持している場合、広告が出ず scan で見つからないことがあるため。
@@ -230,6 +231,21 @@ measure      0x2010 00            → 0xA010     応答待ち 120 秒。この�
 complete     0x3000 00            → 0xB000
 result       0x3010 01            → 0xB010     測定結果
 ```
+
+### 複数件の取得（`--drain`）
+
+BC-768 が測定を何件保持できるかは未確定。`0x3010` が 1 件ずつ取り出す（pop する）動きなら、
+繰り返せば古い測定も取れるはず。`--drain` は日時付きのレコードが返る限り `0x3010` を送り続ける。
+
+```bash
+bc768-probe sync --drain --json
+```
+
+日時ゼロが返った時点で打ち切る（残っていないことを示すため）。
+歯止めとして 32 件で止まる。
+
+検証するには、ツールもアプリも起動せずに本体だけで複数回測定してから実行する。
+`measure` で測ると即座に引き取ってしまうので溜まらない。
 
 `sync` は `measure` から `0x2010` だけを外したもの。その場で測らず、BC-768 が保持している
 データを引き取る用途で、**Health Planet の HOME 画面を開いたときの動作に相当する**

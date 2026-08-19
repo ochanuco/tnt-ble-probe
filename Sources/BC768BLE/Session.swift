@@ -30,6 +30,10 @@ public final class BC768Session: NSObject {
     private var handshakeFinished = false
     /// 直近の 0x3000 応答が示した「送信対象データの有無」。0xB010 の記録に添える。
     private var lastSendPending: Bool?
+    /// drain で 0x3010 を送った回数。
+    private var drainCount = 0
+    /// 直前の 0xB010 が日時付きで、続きを取りに行くべきか。
+    private var wantsAnotherRecord = false
 
     private let onEvent: @Sendable (BC768Event) -> Void
     private var didComplete = false
@@ -634,6 +638,10 @@ extension BC768Session {
                 retrievedAt: Date()
             )
             emit(.record(record))
+            // 日時が付いていれば「まだ残っている」とみなして続きを取りに行く。
+            wantsAnotherRecord = options.drain
+                && BC768Record.hasTimestamp(result.fields)
+                && drainCount < options.drainLimit
         }
         // BC-768 は取り出せるデータが無くても 0x3010 に応答し、前回値をそのまま返す。
         if message.command == 0xB010, !BC768Record.hasTimestamp(result.fields) {
@@ -818,6 +826,15 @@ extension BC768Session {
             ("command", String(format: "0x%04X", message.command)),
             ("writeChar", activeWriteChar?.logicalName),
         ])
+
+        // drain 中は同じ result ステップを繰り返す（スタックから順に取り出す想定）。
+        if wantsAnotherRecord, step.label == "result" {
+            wantsAnotherRecord = false
+            drainCount += 1
+            logEvent("DRAIN_NEXT", [("count", String(drainCount))])
+            sendCurrentStep(on: peripheral)
+            return
+        }
 
         stepIndex += 1
         guard stepIndex < steps.count else {

@@ -54,6 +54,8 @@ struct Options {
     var nameFilter: String?
     /// discover の結果を設定ファイルへ書き出す。
     var saveConfig = false
+    /// sync で、日時付きのレコードが返る限り 0x3010 を繰り返す。
+    var drain = false
 
     static let usage = """
     bc768-probe - TANITA BC-768 / macOS BLE Pairing 検証 CLI
@@ -95,6 +97,7 @@ struct Options {
       --only-new          新規の測定結果 (日時があり送信対象) のときだけ JSON を出す
       --name <text>       discover で接続する端末を名前で絞る (部分一致、例: TNT)
       --save              discover の結果を設定ファイルへ書き出す
+      --drain             sync で、日時付きのレコードが返る限り取り続ける
       --command <hex>     decode で hex を payload として扱うときのコマンド番号
                           (例: --command B010。省略時はメッセージ全体として解釈)
       -h, --help          このヘルプを表示する
@@ -132,6 +135,7 @@ extension Options {
         result.handshakeDelay = handshakeDelay
         result.steps = steps
         result.verbose = debug
+        result.drain = drain
         return result
     }
 }
@@ -233,6 +237,8 @@ enum CLI {
                 options.nameFilter = try nextValue(for: arg)
             case "--save":
                 options.saveConfig = true
+            case "--drain":
+                options.drain = true
             case "--out":
                 options.outputPath = try nextValue(for: arg)
             case "--command":
