@@ -16,7 +16,7 @@ struct BC768ProbeApp: App {
             ContentView(store: store, controller: controller)
                 .onAppear { NSApplication.shared.activate(ignoringOtherApps: true) }
         }
-        .defaultSize(width: 900, height: 600)
+        .defaultSize(width: 1180, height: 620)
         .commands {
             CommandGroup(replacing: .newItem) {}
         }

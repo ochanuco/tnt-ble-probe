@@ -27,7 +27,7 @@ struct ContentView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 1100, minHeight: 480)
+        .frame(minWidth: 1120, minHeight: 480)
         .onAppear { controller.checkConfiguration() }
         .sheet(isPresented: $showsSetup) {
             SetupView { controller.checkConfiguration() }
@@ -116,6 +116,7 @@ struct ContentView: View {
 
     private var table: some View {
         // TableColumnBuilder は 1 段で 10 列までしか組めないので、2 つに分けて渡す。
+        // 各列は下限だけ決めて ideal を持たせない。余った幅は Table が配分するので横スクロールにならない。
         Table(store.entries) {
             bodyColumns
             scoreColumns
@@ -133,35 +134,35 @@ struct ContentView: View {
                 Text("日時なし").foregroundStyle(.secondary)
             }
         }
-        .width(min: 155, ideal: 165)
+        .width(min: 150)
         TableColumn("体重") { Text(format($0.record.weightKg, unit: "kg", digits: 2)) }
-            .width(min: 74, ideal: 80)
+            .width(min: 74)
         TableColumn("体脂肪率") { Text(format($0.record.bodyFatPercent, unit: "%", digits: 1)) }
-            .width(min: 70, ideal: 76)
+            .width(min: 70)
         TableColumn("筋肉量") { Text(format($0.record.muscleMassKg, unit: "kg", digits: 2)) }
-            .width(min: 74, ideal: 80)
+            .width(min: 74)
+        // 6024 を筋肉スコアと読んでいるが、アプリ表示との答え合わせは済んでいない。
+        TableColumn("筋肉スコア†") { Text(format($0.record.muscleScore, unit: "", digits: 0)) }
+            .width(min: 80)
         TableColumn("推定骨量") { Text(format($0.record.boneMassKg, unit: "kg", digits: 2)) }
-            .width(min: 74, ideal: 80)
-        TableColumn("BMI") { Text(format($0.record.bmi, unit: "", digits: 1)) }
-            .width(min: 46, ideal: 52)
-        TableColumn("体水分量") { Text(format($0.record.bodyWaterKg, unit: "kg", digits: 1)) }
-            .width(min: 74, ideal: 80)
-        // BC-768 は体水分「率」を返さない。体重で割った計算値だと分かる列名にしておく。
-        TableColumn("体水分率*") { Text(format($0.bodyWaterPercent, unit: "%", digits: 1)) }
-            .width(min: 76, ideal: 82)
+            .width(min: 74)
     }
 
     @TableColumnBuilder<MeasurementStore.Entry, Never>
     private var scoreColumns: some TableColumnContent<MeasurementStore.Entry, Never> {
+        TableColumn("BMI") { Text(format($0.record.bmi, unit: "", digits: 1)) }
+            .width(min: 46)
+        TableColumn("内臓脂肪Lv") { Text(format($0.record.visceralFatLevel, unit: "", digits: 1)) }
+            .width(min: 76)
+        TableColumn("体水分量") { Text(format($0.record.bodyWaterKg, unit: "kg", digits: 1)) }
+            .width(min: 74)
+        // BC-768 は体水分「率」を返さない。体重で割った計算値だと分かる列名にしておく。
+        TableColumn("体水分率*") { Text(format($0.bodyWaterPercent, unit: "%", digits: 1)) }
+            .width(min: 76)
         TableColumn("基礎代謝") { Text(format($0.record.basalMetabolismKcal, unit: "kcal", digits: 0)) }
-            .width(min: 82, ideal: 88)
+            .width(min: 80)
         TableColumn("体内年齢") { Text(format($0.record.metabolicAgeYears, unit: "歳", digits: 0)) }
-            .width(min: 66, ideal: 72)
-        TableColumn("内臓脂肪") { Text(format($0.record.visceralFatLevel, unit: "", digits: 1)) }
-            .width(min: 66, ideal: 72)
-        // 6024 を筋肉スコアと読んでいるが、アプリ表示との答え合わせは済んでいない。
-        TableColumn("筋肉スコア†") { Text(format($0.record.muscleScore, unit: "", digits: 0)) }
-            .width(min: 86, ideal: 92)
+            .width(min: 66)
     }
 
     // MARK: - ログ
