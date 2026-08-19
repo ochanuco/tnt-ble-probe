@@ -30,12 +30,10 @@ public final class BC768Session: NSObject {
     private var handshakeFinished = false
     /// 直近の 0x3000 応答が示した「送信対象データの有無」。0xB010 の記録に添える。
     private var lastSendPending: Bool?
-    /// drain で 0x3010 を送った回数。
-    private var drainCount = 0
-    /// 直前の 0xB010 が日時付きで、続きを取りに行くべきか。
-    private var wantsAnotherRecord = false
-    /// 直前に受け取った測定レコード。同じものが返ったら打ち切るために持つ。
-    private var lastRecordPayload: Data?
+    /// これから `0x3010` で取りに行くレコード番号の並び。
+    /// `0xB000` が返した件数 N から `[N, N-1, ..., 1]` を組み立てる（Health Planet と同じ順序）。
+    /// nil は「件数を聞いていない」= 従来どおり 1 件だけ取る、を意味する。
+    private var recordQueue: [UInt8]?
 
     private let onEvent: @Sendable (BC768Event) -> Void
     private var didComplete = false
@@ -640,17 +638,6 @@ extension BC768Session {
                 retrievedAt: Date()
             )
             emit(.record(record))
-            // 0x3010 は取り出す（pop する）のではなく、同じレコードを読み直す動きだった。
-            // 同じ内容が返ったら打ち切らないと同じものを取り続けてしまう。
-            let isSameAsPrevious = message.payload == lastRecordPayload
-            if isSameAsPrevious {
-                logInfo("同じレコードが返りました。0x3010 は次を取り出す動きではないため打ち切ります。")
-            }
-            lastRecordPayload = message.payload
-            wantsAnotherRecord = options.drain
-                && BC768Record.hasTimestamp(result.fields)
-                && !isSameAsPrevious
-                && drainCount < options.drainLimit
         }
         // BC-768 は取り出せるデータが無くても 0x3010 に応答し、前回値をそのまま返す。
         if message.command == 0xB010, !BC768Record.hasTimestamp(result.fields) {
@@ -681,6 +668,7 @@ extension BC768Session {
         }
         steps = HandshakeStep.sequence(with: handshake, labels: labels)
         stepIndex = 0
+        recordQueue = nil
         reassembler.reset()
 
         let candidate: NamedUUID?
@@ -710,7 +698,9 @@ extension BC768Session {
     private func sendCurrentStep(on peripheral: CBPeripheral) {
         guard stepIndex < steps.count else { return }
         let step = steps[stepIndex]
-        let encoded = step.message.encoded()
+        // 0x3010 のレコード番号は 0xB000 が返した件数から決まるので、送る直前に差し替える。
+        let outgoing = resultMessage(for: step) ?? step.message
+        let encoded = outgoing.encoded()
         let seq: UInt8
         if encoded.count > Self.fragmentSize - BC768Fragment.headerSize {
             seq = nextSeq
@@ -722,13 +712,14 @@ extension BC768Session {
 
         emit(.phase(step.label == "measure" ? .waitingForMeasurement : .handshaking(step: step.label)))
         // 0x0010 は日時設定なので、何を送ったか読める形でも残す。
-        let datetime = step.message.command == 0x0010
-            ? BC768DateTime.decode(step.message.payload).map { BC768MeasurementRecord.format($0) }
+        let datetime = outgoing.command == 0x0010
+            ? BC768DateTime.decode(outgoing.payload).map { BC768MeasurementRecord.format($0) }
             : nil
         logEvent("TX_MESSAGE", [
             ("step", step.label),
-            ("command", String(format: "0x%04X", step.message.command)),
+            ("command", String(format: "0x%04X", outgoing.command)),
             ("expect", String(format: "0x%04X", step.expected)),
+            ("record", step.label == "result" ? recordQueue?.first.map(String.init) : nil),
             ("length", String(encoded.count)),
             ("seq", String(format: "0x%02X", seq)),
             ("fragments", String(fragments.count)),
@@ -756,6 +747,12 @@ extension BC768Session {
             }
         }
         scheduleResponseTimeout(on: peripheral)
+    }
+
+    /// `result` ステップで実際に送るメッセージ。件数を聞けていない場合は nil（既定の `01` を使う）。
+    private func resultMessage(for step: HandshakeStep) -> BC768Message? {
+        guard step.label == "result", let index = recordQueue?.first else { return nil }
+        return BC768Message(command: step.message.command, payload: Data([index]))
     }
 
     private func scheduleResponseTimeout(on peripheral: CBPeripheral) {
@@ -828,8 +825,18 @@ extension BC768Session {
                 ("count", count.map(String.init)),
                 ("hasData", pending.map { $0 ? "true" : "false" }),
             ])
+            if let count {
+                // 番号は 1 起点で、1 が最新。Health Planet は古い方（大きい番号）から取る。
+                let capped = min(count, options.recordLimit)
+                if capped < count {
+                    logError("保持件数 \(count) 件は上限 \(options.recordLimit) 件を超えています。新しい \(capped) 件だけ取得します。")
+                }
+                recordQueue = capped > 0 ? (1...capped).map { UInt8($0) }.reversed() : []
+            }
             if pending == false {
-                logInfo("取り出せる測定データはありません（0x3010 を送っても前回値が返ります）。")
+                logInfo("取り出せる測定データはありません。0x3010 は送りません。")
+            } else if let count {
+                logInfo("\(count) 件保持されています。古い順に取得します。")
             }
         }
         logEvent("STEP_OK", [
@@ -838,16 +845,22 @@ extension BC768Session {
             ("writeChar", activeWriteChar?.logicalName),
         ])
 
-        // drain 中は同じ result ステップを繰り返す（スタックから順に取り出す想定）。
-        if wantsAnotherRecord, step.label == "result" {
-            wantsAnotherRecord = false
-            drainCount += 1
-            logEvent("DRAIN_NEXT", [("count", String(drainCount))])
-            sendCurrentStep(on: peripheral)
-            return
+        // 取得したレコードを 1 件消化し、残っていれば同じステップを次の番号で送り直す。
+        if step.label == "result", recordQueue != nil {
+            recordQueue?.removeFirst()
+            if let next = recordQueue?.first {
+                logEvent("NEXT_RECORD", [("record", String(next))])
+                sendCurrentStep(on: peripheral)
+                return
+            }
         }
 
         stepIndex += 1
+        // 0 件のときは Health Planet と同じく 0x3010 を送らない（送ると前回値が返ってくる）。
+        while stepIndex < steps.count, steps[stepIndex].label == "result", recordQueue?.isEmpty == true {
+            logEvent("STEP_SKIPPED", [("step", "result"), ("reason", "保持件数 0")])
+            stepIndex += 1
+        }
         guard stepIndex < steps.count else {
             handshakeFinished = true
             emit(.phase(.completed))

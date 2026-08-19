@@ -98,11 +98,8 @@ public struct BC768SessionOptions {
     public var steps: [String]?
     /// 詳細な観測を行う（SERVICE_UUID 以外の Characteristic も探索する）。
     public var verbose = false
-    /// 0x3010 を、日時付きのレコードが返る限り繰り返す。
-    /// BC-768 が複数件を保持しているかを確かめるために使う。
-    public var drain = false
-    /// drain の上限（取り過ぎないための歯止め）。
-    public var drainLimit = 32
+    /// 1 セッションで取得するレコードの上限（想定外の件数が返ったときの歯止め）。
+    public var recordLimit = 32
 
     public init(mode: BC768SessionMode) {
         self.mode = mode

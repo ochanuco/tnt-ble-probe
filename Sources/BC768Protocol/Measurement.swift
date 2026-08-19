@@ -159,6 +159,12 @@ public enum BC768Record {
         return !(days == 0 && halfSeconds == 0)
     }
 
+    /// `0xB010` payload 先頭 2 バイトの下位バイト。`0x3010` で要求したレコード番号と一致する。
+    /// 上位バイトは `0x00`（通常）と `0x05`（残留値）を観測している。
+    public static func recordIndex(of payload: Data) -> Int? {
+        header(of: payload).map { Int($0 & 0xFF) }
+    }
+
     /// `0x3000` の応答（`0xB000`）payload が示す**保持件数**。
     /// 実測値は 0 / 1 / 2 で、本体だけで 2 回測ったときに 2 が返った。
     public static func pendingCount(_ payload: Data) -> Int? {

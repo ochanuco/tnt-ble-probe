@@ -303,6 +303,15 @@ final class RecordTests: XCTestCase {
         XCTAssertEqual(BC768Record.hasPendingData(Data([0x00, 0x01])), true)
         XCTAssertEqual(BC768Record.hasPendingData(Data([0x00, 0x02])), true)
     }
+
+    func testRecordIndexIsTheLowByteOfTheHeader() {
+        // 3 件保持しているときの 0x3010 03 / 02 / 01 の応答ヘッダ。
+        XCTAssertEqual(BC768Record.recordIndex(of: Data([0x00, 0x03])), 3)
+        XCTAssertEqual(BC768Record.recordIndex(of: Data([0x00, 0x01])), 1)
+        // 残留値のヘッダは上位バイトが 0x05 になるが、番号は下位バイトのまま。
+        XCTAssertEqual(BC768Record.recordIndex(of: Data([0x05, 0x01])), 1)
+        XCTAssertNil(BC768Record.recordIndex(of: Data([0x00])))
+    }
 }
 
 /// JSON 出力の形。値はすべて架空のもの（実測データは使わない）。

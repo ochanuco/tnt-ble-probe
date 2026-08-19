@@ -41,6 +41,8 @@ public struct BC768MeasurementRecord: Codable {
     public let hasTimestamp: Bool
     /// 0x3000 の応答が示した「タイムスタンプ付きで送信対象になるデータがあるか」。未取得なら null。
     public let sendPending: Bool?
+    /// このレコードの番号。1 が最新で、数字が大きいほど古い。0xB010 以外では null。
+    public let recordIndex: Int?
 
     public let heightCm: Double?
     public let weightKg: Double?
@@ -81,6 +83,7 @@ public struct BC768MeasurementRecord: Codable {
         self.retrievedAt = Self.format(retrievedAt)
         hasTimestamp = BC768Record.hasTimestamp(fields)
         self.sendPending = sendPending
+        recordIndex = command == 0xB010 ? BC768Record.recordIndex(of: payload) : nil
 
         heightCm = BC768Field.scaledValue(fields, tag: 0x6A3E)
         weightKg = BC768Field.scaledValue(fields, tag: 0x6021)
