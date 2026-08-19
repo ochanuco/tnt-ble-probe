@@ -27,7 +27,7 @@ struct ContentView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 780, minHeight: 480)
+        .frame(minWidth: 880, minHeight: 480)
         .onAppear { controller.checkConfiguration() }
         .sheet(isPresented: $showsSetup) {
             SetupView { controller.checkConfiguration() }
@@ -116,21 +116,32 @@ struct ContentView: View {
 
     private var table: some View {
         Table(store.entries) {
+            // 日時は他より長い。既定幅では見切れるので下限を決めておく。
             TableColumn("測定日時") { entry in
                 if let date = entry.measuredAt {
                     Text(date, format: .dateTime.year().month().day().hour().minute())
+                        .monospacedDigit()
                 } else {
                     Text("日時なし").foregroundStyle(.secondary)
                 }
             }
+            .width(min: 155, ideal: 165)
             TableColumn("体重") { Text(format($0.record.weightKg, unit: "kg", digits: 2)) }
+                .width(min: 74, ideal: 80)
             TableColumn("体脂肪率") { Text(format($0.record.bodyFatPercent, unit: "%", digits: 1)) }
+                .width(min: 70, ideal: 76)
             TableColumn("筋肉量") { Text(format($0.record.muscleMassKg, unit: "kg", digits: 2)) }
+                .width(min: 74, ideal: 80)
             TableColumn("推定骨量") { Text(format($0.record.boneMassKg, unit: "kg", digits: 2)) }
+                .width(min: 74, ideal: 80)
             TableColumn("BMI") { Text(format($0.record.bmi, unit: "", digits: 1)) }
+                .width(min: 46, ideal: 52)
             TableColumn("体水分量") { Text(format($0.record.bodyWaterKg, unit: "kg", digits: 1)) }
+                .width(min: 74, ideal: 80)
             TableColumn("基礎代謝") { Text(format($0.record.basalMetabolismKcal, unit: "kcal", digits: 0)) }
+                .width(min: 82, ideal: 88)
             TableColumn("体内年齢") { Text(format($0.record.metabolicAgeYears, unit: "歳", digits: 0)) }
+                .width(min: 66, ideal: 72)
         }
     }
 
