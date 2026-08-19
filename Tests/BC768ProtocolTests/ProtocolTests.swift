@@ -290,12 +290,18 @@ final class RecordTests: XCTestCase {
         XCTAssertTrue(BC768Record.hasTimestamp(dayOnly))
     }
 
-    func testPendingData() {
+    func testPendingCountIsACount() {
+        // 0xB000 の payload は保持件数。本体だけで 2 回測ると 2 が返る。
+        XCTAssertEqual(BC768Record.pendingCount(Data([0x00, 0x00])), 0)
+        XCTAssertEqual(BC768Record.pendingCount(Data([0x00, 0x01])), 1)
+        XCTAssertEqual(BC768Record.pendingCount(Data([0x00, 0x02])), 2)
+        XCTAssertNil(BC768Record.pendingCount(Data([0x00])))
+    }
+
+    func testHasPendingData() {
         XCTAssertEqual(BC768Record.hasPendingData(Data([0x00, 0x00])), false)
         XCTAssertEqual(BC768Record.hasPendingData(Data([0x00, 0x01])), true)
-        // 未知の値では判断しない
-        XCTAssertNil(BC768Record.hasPendingData(Data([0x00, 0x02])))
-        XCTAssertNil(BC768Record.hasPendingData(Data([0x00])))
+        XCTAssertEqual(BC768Record.hasPendingData(Data([0x00, 0x02])), true)
     }
 }
 

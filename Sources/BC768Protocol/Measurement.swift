@@ -159,16 +159,17 @@ public enum BC768Record {
         return !(days == 0 && halfSeconds == 0)
     }
 
-    /// `0x3000` の応答（`0xB000`）payload が示す「取り出せるデータの有無」。
-    /// 観測値は測定直後が `0x0001`、それ以外が `0x0000`。未知の値では判断しない。
-    public static func hasPendingData(_ payload: Data) -> Bool? {
+    /// `0x3000` の応答（`0xB000`）payload が示す**保持件数**。
+    /// 実測値は 0 / 1 / 2 で、本体だけで 2 回測ったときに 2 が返った。
+    public static func pendingCount(_ payload: Data) -> Int? {
         guard payload.count >= 2 else { return nil }
         let base = payload.startIndex
-        switch UInt16(payload[base]) << 8 | UInt16(payload[base + 1]) {
-        case 0x0000: return false
-        case 0x0001: return true
-        default: return nil
-        }
+        return Int(payload[base]) << 8 | Int(payload[base + 1])
+    }
+
+    /// 取り出せるデータがあるか（件数が 1 以上か）。
+    public static func hasPendingData(_ payload: Data) -> Bool? {
+        pendingCount(payload).map { $0 > 0 }
     }
 }
 

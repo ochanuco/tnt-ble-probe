@@ -34,6 +34,8 @@ public final class BC768Session: NSObject {
     private var drainCount = 0
     /// 直前の 0xB010 が日時付きで、続きを取りに行くべきか。
     private var wantsAnotherRecord = false
+    /// 直前に受け取った測定レコード。同じものが返ったら打ち切るために持つ。
+    private var lastRecordPayload: Data?
 
     private let onEvent: @Sendable (BC768Event) -> Void
     private var didComplete = false
@@ -638,9 +640,16 @@ extension BC768Session {
                 retrievedAt: Date()
             )
             emit(.record(record))
-            // 日時が付いていれば「まだ残っている」とみなして続きを取りに行く。
+            // 0x3010 は取り出す（pop する）のではなく、同じレコードを読み直す動きだった。
+            // 同じ内容が返ったら打ち切らないと同じものを取り続けてしまう。
+            let isSameAsPrevious = message.payload == lastRecordPayload
+            if isSameAsPrevious {
+                logInfo("同じレコードが返りました。0x3010 は次を取り出す動きではないため打ち切ります。")
+            }
+            lastRecordPayload = message.payload
             wantsAnotherRecord = options.drain
                 && BC768Record.hasTimestamp(result.fields)
+                && !isSameAsPrevious
                 && drainCount < options.drainLimit
         }
         // BC-768 は取り出せるデータが無くても 0x3010 に応答し、前回値をそのまま返す。
@@ -811,10 +820,12 @@ extension BC768Session {
 
         // 0xB000 の payload が「取り出せるデータの有無」を示す。
         if message.command == 0xB000 {
+            let count = BC768Record.pendingCount(message.payload)
             let pending = BC768Record.hasPendingData(message.payload)
             lastSendPending = pending
             logEvent("PENDING_DATA", [
                 ("payload", message.payload.hexString),
+                ("count", count.map(String.init)),
                 ("hasData", pending.map { $0 ? "true" : "false" }),
             ])
             if pending == false {
