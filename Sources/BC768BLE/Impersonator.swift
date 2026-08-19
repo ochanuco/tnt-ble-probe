@@ -146,10 +146,16 @@ extension BC768Impersonator: CBPeripheralManagerDelegate {
             ("uuid", service.uuid.uuidString),
             ("characteristics", String(service.characteristics?.count ?? 0)),
         ])
-        peripheral.startAdvertising([
-            CBAdvertisementDataLocalNameKey: options.localName,
+        // macOS は入りきらない 128 bit UUID を Apple 独自のオーバーフロー領域へ回すことがあり、
+        // そこは Apple 製品しか読めない。Local Name を外すと通常領域に収まる可能性があるので、
+        // 空文字を渡したときは名前を載せない。
+        var advertisement: [String: Any] = [
             CBAdvertisementDataServiceUUIDsKey: [config.service.uuid],
-        ])
+        ]
+        if !options.localName.isEmpty {
+            advertisement[CBAdvertisementDataLocalNameKey] = options.localName
+        }
+        peripheral.startAdvertising(advertisement)
     }
 
     public func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
@@ -159,7 +165,7 @@ extension BC768Impersonator: CBPeripheralManagerDelegate {
             return
         }
         logEvent("ADVERTISING", [
-            ("localName", options.localName),
+            ("localName", options.localName.isEmpty ? "(なし)" : options.localName),
             ("service", config.service.uuid.uuidString),
         ])
         logInfo("BC-768 のふりをして広告しています。Health Planet から接続してください。")

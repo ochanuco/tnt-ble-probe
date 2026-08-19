@@ -106,6 +106,8 @@ struct Options {
                           (例: --command B010。省略時はメッセージ全体として解釈)
       --reply             impersonate で観測済みの応答を返し、やり取りを先へ進める
       --local-name <text> impersonate の広告名 (既定 TNT_BW)
+                          空文字を渡すと名前を載せない
+                          (128 bit UUID を通常の広告領域に収めるため)
       -h, --help          このヘルプを表示する
 
     ENVIRONMENT:
