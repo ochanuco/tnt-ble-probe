@@ -497,3 +497,41 @@ final class BirthDateTests: XCTestCase {
         XCTAssertNil(BC768DateTime.birthDate(days: 0, calendar: calendar))
     }
 }
+
+/// impersonate の受信経路。Health Planet が送ってくる 0x0003 を、
+/// フラグメントの並びから識別子の文字列まで戻せることを確かめる。
+final class ImpersonateReceiveTests: XCTestCase {
+    func testRecoversClientIDFromFragments() throws {
+        // 実際の識別子は使わない。長さと形だけ合わせた架空の UUID。
+        let clientID = "0123abcd-4567-89ef-0123-456789abcdef"
+        let message = BC768Message(command: 0x0003, payload: Data(clientID.utf8))
+        let encoded = message.encoded()
+
+        // Android と同じ 20 バイト固定で刻まれてくる。
+        let fragments = BC768Fragment.split(encoded, seq: 0x02, maxPayload: 20)
+        XCTAssertGreaterThan(fragments.count, 1, "36 文字なら 1 フラグメントには収まらない")
+
+        var reassembler = BC768Reassembler()
+        var assembled: Data?
+        for fragment in fragments {
+            if let done = reassembler.append(fragment) { assembled = done }
+        }
+
+        let body = try XCTUnwrap(assembled)
+        let (decoded, checksumValid) = try XCTUnwrap(BC768Message.decode(body))
+        XCTAssertTrue(checksumValid)
+        XCTAssertEqual(decoded.command, 0x0003)
+        XCTAssertEqual(String(decoding: decoded.payload, as: UTF8.self), clientID)
+    }
+
+    func testIgnoresIncompleteFragments() {
+        let message = BC768Message(command: 0x0003, payload: Data(String(repeating: "a", count: 36).utf8))
+        let fragments = BC768Fragment.split(message.encoded(), seq: 0x02, maxPayload: 20)
+
+        var reassembler = BC768Reassembler()
+        // 最後の 1 つを落とすと、途中では組み上がらない。
+        for fragment in fragments.dropLast() {
+            XCTAssertNil(reassembler.append(fragment))
+        }
+    }
+}
