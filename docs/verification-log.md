@@ -1029,3 +1029,74 @@ GUI の表と CSV には「体水分率(計算)」として `6F21 ÷ 体重 x 10
 61.90 kg の測定はこちらのツールが引き取ったため Health Planet に入っておらず、
 **アプリ側で筋肉スコア 2 を確認できていない**。相関と並び順からの判断に留まる。
 ラベルは付けたが `confirmed` は立てていない（ログには「(推定)」が付く）。
+
+## 2026-08-20 なりすましで識別子を取る試み（失敗）
+
+クライアント識別子を Android の HCI キャプチャなしで手に入れるため、
+macOS を BC-768 に見せかけて Health Planet から `0x0003` を受け取る方法を試した。
+
+`bc768-probe impersonate` として実装し、実機で検証した。**結論は失敗。**
+Health Planet は広告を受け取ったうえで、アプリのコードで捨てている。
+
+### 広告は完全に一致させられた
+
+LightBlue で読んだ生の広告パケットが本物と 1 バイトも違わない状態まで持っていけた。
+
+```text
+本物       A0:3C:31:D5:34:39   0x02011A110735ACAD1DBFB8B8837947906B00513E27
+なりすまし BC:D0:74:09:AD:40   0x02011A110735ACAD1DBFB8B8837947906B00513E27
+
+  02 01 1A          Flags（LE General Discoverable + BR/EDR Not Supported）
+  11 07 <16 bytes>  Complete 128bit Service UUID
+```
+
+GATT の構成も一致させた（Service 1 つ + write × 2 + notify × 3）。
+Local Name も `TNT_BW` で同じ。Android から LightBlue で接続でき、Characteristic も見えた。
+
+### アプリは受け取ったうえで捨てている
+
+`adb shell dumpsys bluetooth_manager` で、Health Planet のスキャンフィルタが読めた。
+
+```text
+jp.healthplanet.healthplanetapp (Registered):
+  Filter: [ ServiceUuid=273e5100-6b90-4779-83b8-b8bf1dadac35 ]
+  Results: (0 / 42 / 42)   ← 10 秒あたり 42 件
+```
+
+- フィルタは **Service UUID だけ**。アドレスでも名前でも絞っていない
+- 本物の電源を落とした状態でも 10 秒あたり 42 件届いている。出しているのは Mac だけ
+- それでも Health Planet から Mac（`ad:40`）への GATT 接続は 1 度も発生しない
+
+つまりスタックのフィルタは通過していて、アプリ自身が `ScanResult` を見て捨てている。
+
+### 残った差分は BD アドレスだけ
+
+`ScanResult` から判断できる材料を並べると、一致していないのはアドレスだけになる。
+
+| 項目 | 本物 | なりすまし |
+| --- | --- | --- |
+| Service UUID | 273e5100-… | 同じ |
+| Local Name | `TNT_BW` | 同じ |
+| 生の広告バイト列 | 上記 | 同じ |
+| **BD アドレス** | `A0:3C:31:D5:34:39` | `BC:D0:74:09:AD:40`（Apple の OUI） |
+
+**macOS には BD アドレスを変える手段がない**ため、この方法では Health Planet を騙せない。
+
+### 途中で踏んだ誤り
+
+- 本物の BC-768 が生きているあいだにテストしていた。Health Planet は本物へ接続しており
+  （`GATT_CH_OPEN xx:xx:xx:xx:34:39`）、なりすましは見られてすらいなかった。
+  電池を抜いた状態で撮り直すまで、この汚染に気づかなかった
+- 「ペアリングモードでは広告が違うのでは」という仮説は外れ。通常モードと完全に同じだった
+- 「macOS が 128bit UUID をオーバーフロー領域へ回しているのでは」も外れ。
+  生パケットに通常の AD として載っていた
+- 「GATT の Device Name が Mac のものだから弾かれる」も外れ。接続前に捨てられている
+
+### 残る道
+
+- **Android の HCI キャプチャ**（実績あり）。`0x0003` の payload に識別子が平文で乗っている
+- BD アドレスを設定できるハードウェア（Linux + `btmgmt public-addr`、ESP32 など）なら
+  同じ手が使える見込み。macOS 単体では不可能
+
+`impersonate` のコードは残す。プロトコルの受信側を実装した唯一の場所であり、
+アドレスを変えられる環境では再利用できる。
