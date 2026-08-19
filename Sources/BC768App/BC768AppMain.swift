@@ -30,7 +30,8 @@ struct BC768ProbeApp: App {
     /// 利用者が自分で広げた幅は縮めない。
     private static func widenWindowIfNeeded() {
         DispatchQueue.main.async {
-            guard let window = NSApplication.shared.windows.first,
+            // 画面に出ているウィンドウを選ぶ。windows.first が目的のものとは限らない。
+            guard let window = NSApplication.shared.windows.first(where: { $0.isVisible }),
                   window.frame.width < ContentView.preferredWindowWidth else { return }
             var frame = window.frame
             frame.size.width = ContentView.preferredWindowWidth
