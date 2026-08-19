@@ -98,7 +98,7 @@ final class MeasurementStore: ObservableObject {
     /// スプレッドシートへ貼れる形にする。
     func csv() -> String {
         // body_water_percent_calc だけは計算値（BC-768 は率を返さない）。名前で区別できるようにしてある。
-        var lines = ["measured_at,retrieved_at,weight_kg,body_fat_percent,muscle_mass_kg,bone_mass_kg,bmi,body_water_kg,body_water_percent_calc,basal_metabolism_kcal,metabolic_age,visceral_fat_level"]
+        var lines = ["measured_at,retrieved_at,weight_kg,body_fat_percent,muscle_mass_kg,bone_mass_kg,bmi,body_water_kg,body_water_percent_calc,basal_metabolism_kcal,metabolic_age,visceral_fat_level,muscle_score"]
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         for entry in entries.sorted(by: { $0.sortKey < $1.sortKey }) {
@@ -112,6 +112,7 @@ final class MeasurementStore: ObservableObject {
                 format(record.bodyWaterKg), format(entry.bodyWaterPercent.map { ($0 * 10).rounded() / 10 }),
                 format(record.basalMetabolismKcal),
                 format(record.metabolicAgeYears), format(record.visceralFatLevel),
+                format(record.muscleScore),
             ]
             lines.append(columns.joined(separator: ","))
         }

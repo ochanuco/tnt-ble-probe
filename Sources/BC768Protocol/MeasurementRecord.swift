@@ -55,6 +55,8 @@ public struct BC768MeasurementRecord: Codable {
     public let basalMetabolismKcal: Double?
     public let metabolicAgeYears: Double?
     public let visceralFatLevel: Double?
+    /// 筋肉スコア（`6024`）。筋肉量に連動して動くことから当てたもので、アプリ表示との答え合わせは未了。
+    public let muscleScore: Double?
 
     public let estimated: Estimated
     public let checks: [Check]
@@ -96,6 +98,7 @@ public struct BC768MeasurementRecord: Codable {
 
         metabolicAgeYears = BC768Field.scaledValue(fields, tag: 0x6028)
         visceralFatLevel = BC768Field.scaledValue(fields, tag: 0x6025)
+        muscleScore = BC768Field.scaledValue(fields, tag: 0x6024)
 
         estimated = Estimated(
             resistanceOhm: BC768Field.scaledValue(fields, tag: 0x614B),
