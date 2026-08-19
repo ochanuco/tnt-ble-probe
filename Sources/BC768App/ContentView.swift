@@ -4,6 +4,13 @@ import BC768Protocol
 import SwiftUI
 
 struct ContentView: View {
+    /// 表 12 列の `.width(min:)` の合計。列を足し引きしたらここも直すこと。
+    static let tableColumnsWidth: CGFloat = 150 + 74 + 70 + 74 + 74 + 74 + 46 + 76 + 74 + 76 + 80 + 66
+    /// 表が横スクロールにならない最小のウィンドウ幅。列間の隙間と枠の分を足してある。
+    static let minimumWindowWidth: CGFloat = tableColumnsWidth + 186
+    /// 起動時のウィンドウ幅。下限ぎりぎりだと窮屈なので少し広げてある。
+    static let preferredWindowWidth: CGFloat = tableColumnsWidth + 306
+
     @ObservedObject var store: MeasurementStore
     @ObservedObject var controller: SessionController
     @State private var showsLog = false
@@ -27,7 +34,7 @@ struct ContentView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 1120, minHeight: 480)
+        .frame(minWidth: Self.minimumWindowWidth, minHeight: 480)
         .onAppear { controller.checkConfiguration() }
         .sheet(isPresented: $showsSetup) {
             SetupView { controller.checkConfiguration() }
