@@ -19,6 +19,8 @@ final class SessionController: ObservableObject {
     var configPath: String { ConfigLoader.userConfigPath }
 
     private var session: BC768Session?
+    /// このセッションで取り込んだ件数。0 件で終わったときに案内を出すために数える。
+    private var storedCount = 0
     private let queue = DispatchQueue(label: "com.ochanuco.bc768-app.ble")
     private static let maxLogLines = 300
 
@@ -43,6 +45,7 @@ final class SessionController: ObservableObject {
         errorText = nil
         lastResultText = nil
         logLines = []
+        storedCount = 0
 
         let configuration: BC768Configuration
         do {
@@ -92,13 +95,17 @@ final class SessionController: ObservableObject {
             statusText = Self.describe(phase)
         case let .record(record):
             let added = store.append(record)
+            if added { storedCount += 1 }
             lastResultText = Self.describe(record, added: added)
         case let .completed(completion):
             isRunning = false
             session = nil
             switch completion {
             case .finished:
-                statusText = "完了"
+                statusText = storedCount > 0 ? "完了（\(storedCount) 件を取り込みました）" : "完了"
+                if storedCount == 0, lastResultText == nil {
+                    lastResultText = "BC-768 に取り出せるデータはありませんでした。"
+                }
             case .cancelled:
                 statusText = "停止しました"
             case let .failed(reason):

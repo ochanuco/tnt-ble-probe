@@ -51,6 +51,8 @@ final class MeasurementStore: ObservableObject {
                 guard let record = try? decoder.decode(BC768MeasurementRecord.self, from: Data(line.utf8)) else {
                     continue        // 壊れた行は読み飛ばす（他の行を失わない）
                 }
+                // 日時なしの行は残留値。過去のバージョンが書いてしまった分を表に出さない。
+                guard record.hasTimestamp else { continue }
                 loaded.append(Entry(record: record))
             }
             entries = loaded.sorted { $0.sortKey > $1.sortKey }
@@ -62,6 +64,8 @@ final class MeasurementStore: ObservableObject {
     /// 1 件追記する。同じ測定日時のレコードが既にあれば何もしない。
     @discardableResult
     func append(_ record: BC768MeasurementRecord) -> Bool {
+        // 日時が無いレコードは BC-768 に残っていた残留値で、測定結果ではない。保存しない。
+        guard record.hasTimestamp else { return false }
         if let measuredAt = record.measuredAt,
            entries.contains(where: { $0.record.measuredAt == measuredAt }) {
             return false
