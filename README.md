@@ -85,7 +85,12 @@ Health Planet が使っている識別子が必要になる（`docs/protocol.md`
 識別子は `0x0003` の payload に ASCII でそのまま乗っているので、
 Android の HCI キャプチャ（`adb bugreport` の btsnoop）から読み取れる。
 
-もうひとつの手として、**Mac を BC-768 に見せかけて Health Planet から受け取る**方法がある。
+**Mac を BC-768 に見せかけて Health Planet から受け取る方法は失敗した。**
+広告の生バイト列まで一致させても、Health Planet は BD アドレスを見て捨てる。
+macOS には BD アドレスを変える手段がないため成立しない（詳細は `docs/verification-log.md`）。
+
+受信側の実装自体は `impersonate` として残してある。
+BD アドレスを設定できる環境（Linux + `btmgmt public-addr`、ESP32 など）なら再利用できるはず。
 
 ```bash
 # BC-768 本体の電源は切っておく
