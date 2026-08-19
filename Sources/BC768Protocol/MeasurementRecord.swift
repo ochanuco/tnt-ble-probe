@@ -6,8 +6,6 @@ import Foundation
 /// `raw` には受信 payload と TLV をそのまま入れるので、あとで解釈をやり直せる。
 public struct BC768MeasurementRecord: Codable {
     public struct Estimated: Codable {
-        public let metabolicAgeYears: Double?
-        public let visceralFatLevel: Double?
         /// BIA の抵抗成分（Ω）と推定。
         public let resistanceOhm: Double?
         /// BIA のリアクタンス成分（Ω）と推定。観測値は負。
@@ -43,6 +41,8 @@ public struct BC768MeasurementRecord: Codable {
     public let hasTimestamp: Bool
     /// 0x3000 の応答が示した「タイムスタンプ付きで送信対象になるデータがあるか」。未取得なら null。
     public let sendPending: Bool?
+    /// このレコードの番号。1 が最新で、数字が大きいほど古い。0xB010 以外では null。
+    public let recordIndex: Int?
 
     public let heightCm: Double?
     public let weightKg: Double?
@@ -53,6 +53,10 @@ public struct BC768MeasurementRecord: Codable {
     /// 体水分量。除脂肪量の 72〜74% になることで「率」ではなく「量」と確認した。
     public let bodyWaterKg: Double?
     public let basalMetabolismKcal: Double?
+    public let metabolicAgeYears: Double?
+    public let visceralFatLevel: Double?
+    /// 筋肉スコア（`6024`）。筋肉量に連動して動くことから当てたもので、アプリ表示との答え合わせは未了。
+    public let muscleScore: Double?
 
     public let estimated: Estimated
     public let checks: [Check]
@@ -81,6 +85,7 @@ public struct BC768MeasurementRecord: Codable {
         self.retrievedAt = Self.format(retrievedAt)
         hasTimestamp = BC768Record.hasTimestamp(fields)
         self.sendPending = sendPending
+        recordIndex = command == 0xB010 ? BC768Record.recordIndex(of: payload) : nil
 
         heightCm = BC768Field.scaledValue(fields, tag: 0x6A3E)
         weightKg = BC768Field.scaledValue(fields, tag: 0x6021)
@@ -91,9 +96,11 @@ public struct BC768MeasurementRecord: Codable {
         bodyWaterKg = BC768Field.scaledValue(fields, tag: 0x6F21)
         basalMetabolismKcal = BC768Field.scaledValue(fields, tag: 0x6027)
 
+        metabolicAgeYears = BC768Field.scaledValue(fields, tag: 0x6028)
+        visceralFatLevel = BC768Field.scaledValue(fields, tag: 0x6025)
+        muscleScore = BC768Field.scaledValue(fields, tag: 0x6024)
+
         estimated = Estimated(
-            metabolicAgeYears: BC768Field.scaledValue(fields, tag: 0x6028),
-            visceralFatLevel: BC768Field.scaledValue(fields, tag: 0x6025),
             resistanceOhm: BC768Field.scaledValue(fields, tag: 0x614B),
             reactanceOhm: BC768Field.scaledValue(fields, tag: 0x614C)
         )

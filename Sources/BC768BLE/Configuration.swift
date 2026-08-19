@@ -98,6 +98,8 @@ public struct BC768SessionOptions {
     public var steps: [String]?
     /// 詳細な観測を行う（SERVICE_UUID 以外の Characteristic も探索する）。
     public var verbose = false
+    /// 1 セッションで取得するレコードの上限（想定外の件数が返ったときの歯止め）。
+    public var recordLimit = 32
 
     public init(mode: BC768SessionMode) {
         self.mode = mode

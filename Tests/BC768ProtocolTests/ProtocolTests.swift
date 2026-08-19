@@ -290,12 +290,27 @@ final class RecordTests: XCTestCase {
         XCTAssertTrue(BC768Record.hasTimestamp(dayOnly))
     }
 
-    func testPendingData() {
+    func testPendingCountIsACount() {
+        // 0xB000 の payload は保持件数。本体だけで 2 回測ると 2 が返る。
+        XCTAssertEqual(BC768Record.pendingCount(Data([0x00, 0x00])), 0)
+        XCTAssertEqual(BC768Record.pendingCount(Data([0x00, 0x01])), 1)
+        XCTAssertEqual(BC768Record.pendingCount(Data([0x00, 0x02])), 2)
+        XCTAssertNil(BC768Record.pendingCount(Data([0x00])))
+    }
+
+    func testHasPendingData() {
         XCTAssertEqual(BC768Record.hasPendingData(Data([0x00, 0x00])), false)
         XCTAssertEqual(BC768Record.hasPendingData(Data([0x00, 0x01])), true)
-        // 未知の値では判断しない
-        XCTAssertNil(BC768Record.hasPendingData(Data([0x00, 0x02])))
-        XCTAssertNil(BC768Record.hasPendingData(Data([0x00])))
+        XCTAssertEqual(BC768Record.hasPendingData(Data([0x00, 0x02])), true)
+    }
+
+    func testRecordIndexIsTheLowByteOfTheHeader() {
+        // 3 件保持しているときの 0x3010 03 / 02 / 01 の応答ヘッダ。
+        XCTAssertEqual(BC768Record.recordIndex(of: Data([0x00, 0x03])), 3)
+        XCTAssertEqual(BC768Record.recordIndex(of: Data([0x00, 0x01])), 1)
+        // 残留値のヘッダは上位バイトが 0x05 になるが、番号は下位バイトのまま。
+        XCTAssertEqual(BC768Record.recordIndex(of: Data([0x05, 0x01])), 1)
+        XCTAssertNil(BC768Record.recordIndex(of: Data([0x00])))
     }
 }
 
@@ -462,5 +477,23 @@ final class ResponseStatusTests: XCTestCase {
 
     func testUnknownCode() {
         XCTAssertEqual(BC768ResponseStatus.status(command: 0x8010, payload: Data([0x12, 0x34])), .unknown(0x1234))
+    }
+}
+
+/// 生年月日（6A3C）の起点。
+final class BirthDateTests: XCTestCase {
+    func testBirthDateEpochIsOneDayBeforeNineteenHundred() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+        func components(_ days: Int) throws -> DateComponents {
+            let date = try XCTUnwrap(BC768DateTime.birthDate(days: days, calendar: calendar))
+            return calendar.dateComponents([.year, .month, .day], from: date)
+        }
+        // 1 日目が 1900-01-01。測定日時（6A32）の数え方とは 1 日ずれている。
+        XCTAssertEqual(try components(1), DateComponents(year: 1900, month: 1, day: 1))
+        // 実測値 0x7FF0 = 32752 は 1989-09-02。
+        XCTAssertEqual(try components(32752), DateComponents(year: 1989, month: 9, day: 2))
+        // 0 は未設定として扱う。
+        XCTAssertNil(BC768DateTime.birthDate(days: 0, calendar: calendar))
     }
 }

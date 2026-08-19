@@ -32,18 +32,29 @@ public enum BC768Field {
         0x6A3E: Definition("身長", divisor: 10, unit: "cm", confirmed: true),
         0x6A13: Definition("性別?"),
         0x6A15: Definition("ユーザー番号?"),
-        0x6A3C: Definition("生年月日?"),
-        0x604F: Definition("年齢?"),
+        0x6A3C: Definition("生年月日（1899-12-31 起点の日数）", confirmed: true),
+        // 実際の年齢と合わないため「年齢」ではない。値 50 の意味は不明。
+        0x604F: Definition("不明"),
         0x6021: Definition("体重", divisor: 100, unit: "kg", confirmed: true),
         0x6022: Definition("体脂肪率", divisor: 10, unit: "%", confirmed: true),
         0x6023: Definition("筋肉量", divisor: 100, unit: "kg", confirmed: true),
-        0x6025: Definition("内臓脂肪レベル?", divisor: 10),
+        0x6025: Definition("内臓脂肪レベル", divisor: 10, confirmed: true),
         0x6027: Definition("基礎代謝", unit: "kcal", confirmed: true),
-        0x6028: Definition("体内年齢?", unit: "歳"),
+        0x6028: Definition("体内年齢", unit: "歳", confirmed: true),
         0x6029: Definition("推定骨量", divisor: 100, unit: "kg", confirmed: true),
         0x6056: Definition("BMI", divisor: 10, confirmed: true),
         0x6F21: Definition("体水分量", divisor: 10, unit: "kg", confirmed: true),
         0x6F22: Definition("不明（ほぼ一定）"),
+        // 判定値らしい小さい整数は、対応する測定値の直後に並んでいる。
+        // 6024 は 8 サンプル中 1 つだけ 2 に落ちており、筋肉量 62.0 kg を境に切り替わっていた。
+        // 同じ候補だった 6077 と 605A はどのサンプルでも動かない。
+        0x6024: Definition("筋肉スコア"),
+        0x6077: Definition("不明（観測値は常に 3）"),
+        0x605A: Definition("不明（観測値は常に 4）"),
+        0x6070: Definition("体脂肪率の判定?"),
+        0x607D: Definition("内臓脂肪レベルの判定?"),
+        // 基礎代謝が 1875 kcal 付近で 7 と 8 が入れ替わる。段階の意味は不明。
+        0x602F: Definition("基礎代謝の判定?"),
         0x614B: Definition("抵抗 R?", divisor: 10, unit: "Ω", signed: true),
         0x614C: Definition("リアクタンス Xc?", divisor: 10, unit: "Ω", signed: true),
     ]
@@ -53,6 +64,15 @@ public enum BC768Field {
         guard let definition = definitions[field.tag] else {
             return "\(field.tagHex)=<未知> raw=\(field.value.hexString)"
         }
+        // 日数のままでは読めないので、カレンダー日付にして出す。
+        if field.tag == 0x6A3C, let date = BC768DateTime.birthDate(days: Int(field.unsignedValue)) {
+            return "\(definition.label)=\(Self.dayFormatter.string(from: date)) [tag=\(field.tagHex) raw=\(field.value.hexString)]"
+        }
+        if field.tag == 0x6A32,
+           let date = BC768DateTime.date(days: Int(field.unsignedValue), halfSeconds: 0),
+           field.unsignedValue > 0 {
+            return "\(definition.label)=\(Self.dayFormatter.string(from: date)) [tag=\(field.tagHex) raw=\(field.value.hexString)]"
+        }
         let raw = definition.signed ? Double(field.signedValue) : Double(field.unsignedValue)
         let scaled = raw / definition.divisor
         let formatted = definition.divisor == 1
@@ -61,6 +81,14 @@ public enum BC768Field {
         let mark = definition.confirmed ? "" : " (推定)"
         let unit = definition.unit.isEmpty ? "" : " \(definition.unit)"
         return "\(definition.label)=\(formatted)\(unit)\(mark) [tag=\(field.tagHex) raw=\(field.value.hexString)]"
+    }
+
+    /// 日付だけを出す整形。DateFormatter は Sendable ではないため都度作る（呼ばれる頻度は低い）。
+    private static var dayFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
     }
 
     private static func decimals(for divisor: Double) -> Int {
@@ -155,16 +183,23 @@ public enum BC768Record {
         return !(days == 0 && halfSeconds == 0)
     }
 
-    /// `0x3000` の応答（`0xB000`）payload が示す「取り出せるデータの有無」。
-    /// 観測値は測定直後が `0x0001`、それ以外が `0x0000`。未知の値では判断しない。
-    public static func hasPendingData(_ payload: Data) -> Bool? {
+    /// `0xB010` payload 先頭 2 バイトの下位バイト。`0x3010` で要求したレコード番号と一致する。
+    /// 上位バイトは `0x00`（通常）と `0x05`（残留値）を観測している。
+    public static func recordIndex(of payload: Data) -> Int? {
+        header(of: payload).map { Int($0 & 0xFF) }
+    }
+
+    /// `0x3000` の応答（`0xB000`）payload が示す**保持件数**。
+    /// 実測値は 0 / 1 / 2 で、本体だけで 2 回測ったときに 2 が返った。
+    public static func pendingCount(_ payload: Data) -> Int? {
         guard payload.count >= 2 else { return nil }
         let base = payload.startIndex
-        switch UInt16(payload[base]) << 8 | UInt16(payload[base + 1]) {
-        case 0x0000: return false
-        case 0x0001: return true
-        default: return nil
-        }
+        return Int(payload[base]) << 8 | Int(payload[base + 1])
+    }
+
+    /// 取り出せるデータがあるか（件数が 1 以上か）。
+    public static func hasPendingData(_ payload: Data) -> Bool? {
+        pendingCount(payload).map { $0 > 0 }
     }
 }
 

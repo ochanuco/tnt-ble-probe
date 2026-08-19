@@ -4,6 +4,13 @@ import BC768Protocol
 import SwiftUI
 
 struct ContentView: View {
+    /// 表 12 列の `.width(min:)` の合計。列を足し引きしたらここも直すこと。
+    static let tableColumnsWidth: CGFloat = 150 + 74 + 70 + 74 + 74 + 74 + 46 + 76 + 74 + 76 + 80 + 66
+    /// 表が横スクロールにならない最小のウィンドウ幅。列間の隙間と枠の分を足してある。
+    static let minimumWindowWidth: CGFloat = tableColumnsWidth + 186
+    /// 起動時のウィンドウ幅。下限ぎりぎりだと窮屈なので少し広げてある。
+    static let preferredWindowWidth: CGFloat = tableColumnsWidth + 306
+
     @ObservedObject var store: MeasurementStore
     @ObservedObject var controller: SessionController
     @State private var showsLog = false
@@ -27,7 +34,7 @@ struct ContentView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 780, minHeight: 480)
+        .frame(minWidth: Self.minimumWindowWidth, minHeight: 480)
         .onAppear { controller.checkConfiguration() }
         .sheet(isPresented: $showsSetup) {
             SetupView { controller.checkConfiguration() }
@@ -115,23 +122,55 @@ struct ContentView: View {
     // MARK: - 表
 
     private var table: some View {
+        // TableColumnBuilder は 1 段で 10 列までしか組めないので、2 つに分けて渡す。
+        // ideal を省くと SwiftUI が下限より広い既定幅を当てて合計がウィンドウを超える。
+        // ideal = 下限にして、余った幅だけ Table に配分させる。
         Table(store.entries) {
-            TableColumn("測定日時") { entry in
-                if let date = entry.measuredAt {
-                    Text(date, format: .dateTime.year().month().day().hour().minute())
-                } else {
-                    Text("日時なし").foregroundStyle(.secondary)
-                }
-            }
-            TableColumn("体重") { Text(format($0.record.weightKg, unit: "kg", digits: 2)) }
-            TableColumn("体脂肪率") { Text(format($0.record.bodyFatPercent, unit: "%", digits: 1)) }
-            TableColumn("筋肉量") { Text(format($0.record.muscleMassKg, unit: "kg", digits: 2)) }
-            TableColumn("推定骨量") { Text(format($0.record.boneMassKg, unit: "kg", digits: 2)) }
-            TableColumn("BMI") { Text(format($0.record.bmi, unit: "", digits: 1)) }
-            TableColumn("体水分量") { Text(format($0.record.bodyWaterKg, unit: "kg", digits: 1)) }
-            TableColumn("基礎代謝") { Text(format($0.record.basalMetabolismKcal, unit: "kcal", digits: 0)) }
-            TableColumn("体内年齢*") { Text(format($0.record.estimated.metabolicAgeYears, unit: "歳", digits: 0)) }
+            bodyColumns
+            scoreColumns
         }
+    }
+
+    @TableColumnBuilder<MeasurementStore.Entry, Never>
+    private var bodyColumns: some TableColumnContent<MeasurementStore.Entry, Never> {
+        // 日時は他より長い。既定幅では見切れるので下限を決めておく。
+        TableColumn("測定日時") { entry in
+            if let date = entry.measuredAt {
+                Text(date, format: .dateTime.year().month().day().hour().minute())
+                    .monospacedDigit()
+            } else {
+                Text("日時なし").foregroundStyle(.secondary)
+            }
+        }
+        .width(min: 150, ideal: 150)
+        TableColumn("体重") { Text(format($0.record.weightKg, unit: "kg", digits: 2)) }
+            .width(min: 74, ideal: 74)
+        TableColumn("体脂肪率") { Text(format($0.record.bodyFatPercent, unit: "%", digits: 1)) }
+            .width(min: 70, ideal: 70)
+        TableColumn("筋肉量") { Text(format($0.record.muscleMassKg, unit: "kg", digits: 2)) }
+            .width(min: 74, ideal: 74)
+        // 6024 を筋肉スコアと読んでいるが、アプリ表示との答え合わせは済んでいない。
+        TableColumn("筋肉スコア") { Text(format($0.record.muscleScore, unit: "", digits: 0)) }
+            .width(min: 74, ideal: 74)
+        TableColumn("推定骨量") { Text(format($0.record.boneMassKg, unit: "kg", digits: 2)) }
+            .width(min: 74, ideal: 74)
+    }
+
+    @TableColumnBuilder<MeasurementStore.Entry, Never>
+    private var scoreColumns: some TableColumnContent<MeasurementStore.Entry, Never> {
+        TableColumn("BMI") { Text(format($0.record.bmi, unit: "", digits: 1)) }
+            .width(min: 46, ideal: 46)
+        TableColumn("内臓脂肪Lv") { Text(format($0.record.visceralFatLevel, unit: "", digits: 1)) }
+            .width(min: 76, ideal: 76)
+        TableColumn("体水分量") { Text(format($0.record.bodyWaterKg, unit: "kg", digits: 1)) }
+            .width(min: 74, ideal: 74)
+        // BC-768 は体水分「率」を返さない。体重で割った計算値だと分かる列名にしておく。
+        TableColumn("体水分率*") { Text(format($0.bodyWaterPercent, unit: "%", digits: 1)) }
+            .width(min: 76, ideal: 76)
+        TableColumn("基礎代謝") { Text(format($0.record.basalMetabolismKcal, unit: "kcal", digits: 0)) }
+            .width(min: 80, ideal: 80)
+        TableColumn("体内年齢") { Text(format($0.record.metabolicAgeYears, unit: "歳", digits: 0)) }
+            .width(min: 66, ideal: 66)
     }
 
     // MARK: - ログ
@@ -161,7 +200,7 @@ struct ContentView: View {
         HStack {
             Text("\(store.entries.count) 件")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("* は推定値")
+            Text("* 体水分量 ÷ 体重 の計算値")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
             Button("設定") { showsSetup = true }

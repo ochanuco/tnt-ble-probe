@@ -11,6 +11,15 @@ public enum BC768DateTime {
     public static let timeTag: [UInt8] = [0x6A, 0x33]
     /// 日数の起点。
     public static let epoch = DateComponents(year: 2000, month: 1, day: 1)
+    /// 生年月日（`6A3C`）の起点。測定日時（`6A32`）とは 1 日ずれた数え方をしている。
+    /// 1900-01-01 が 1 日目、つまり起点は 1899-12-31。実際の生年月日と突き合わせて確かめた。
+    public static let birthEpoch = DateComponents(year: 1899, month: 12, day: 31)
+
+    /// `6A3C`（生年月日）の日数を Date へ直す。
+    public static func birthDate(days: Int, calendar: Calendar = .current) -> Date? {
+        guard days > 0, let epochDate = calendar.date(from: birthEpoch) else { return nil }
+        return calendar.date(byAdding: .day, value: days, to: epochDate)
+    }
 
     /// `0x0010` の payload（9 バイト）を組み立てる。
     /// BC-768 はローカル時刻を期待するため、`calendar` のタイムゾーンで日付と時刻を切り出す。
