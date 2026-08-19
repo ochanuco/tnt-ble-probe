@@ -9,6 +9,7 @@ enum Command: String {
     case sync
     case decode
     case discover
+    case impersonate
 }
 
 struct Options {
@@ -54,6 +55,10 @@ struct Options {
     var nameFilter: String?
     /// discover の結果を設定ファイルへ書き出す。
     var saveConfig = false
+    /// impersonate で観測済みの応答を返し、やり取りを先へ進める。
+    var reply = false
+    /// impersonate の広告名。
+    var localName = BC768Impersonator.defaultLocalName
 
     static let usage = """
     bc768-probe - TANITA BC-768 / macOS BLE Pairing 検証 CLI
@@ -69,6 +74,8 @@ struct Options {
       sync       測定は開始せず、BC-768 が保持しているデータの有無を確認して取得する
       decode     受信済みの hex を TLV として解釈する (BLE を使わない)
       discover   UUID 設定なしで端末を探し、GATT の構成から UUID を割り出す
+      impersonate BC-768 のふりをして広告し、Health Planet が送ってくる
+                 クライアント識別子と登録手順を読み取る
 
     OPTIONS:
       --debug             DEBUG ログを有効にする
@@ -97,6 +104,10 @@ struct Options {
       --save              discover の結果を設定ファイルへ書き出す
       --command <hex>     decode で hex を payload として扱うときのコマンド番号
                           (例: --command B010。省略時はメッセージ全体として解釈)
+      --reply             impersonate で観測済みの応答を返し、やり取りを先へ進める
+      --local-name <text> impersonate の広告名 (既定 TNT_BW)
+                          空文字を渡すと名前を載せない
+                          (128 bit UUID を通常の広告領域に収めるため)
       -h, --help          このヘルプを表示する
 
     ENVIRONMENT:
@@ -108,6 +119,14 @@ struct Options {
 }
 
 extension Options {
+    /// なりすまし層へ渡す設定へ変換する。
+    var impersonatorOptions: BC768ImpersonatorOptions {
+        var result = BC768ImpersonatorOptions()
+        result.localName = localName
+        result.reply = reply
+        return result
+    }
+
     /// BLE セッション層へ渡す設定へ変換する。
     var sessionOptions: BC768SessionOptions {
         let mode: BC768SessionMode
@@ -117,7 +136,8 @@ extension Options {
         case .handshake: mode = .handshake
         case .measure: mode = .measure
         case .sync: mode = .sync
-        case .decode, .discover: mode = .probe   // これらは BC768Session を使わない
+        // これらは BC768Session を使わない
+        case .decode, .discover, .impersonate: mode = .probe
         }
         var result = BC768SessionOptions(mode: mode)
         result.noFilter = noFilter
@@ -148,7 +168,7 @@ enum CLIError: Error, CustomStringConvertible {
         case let .missingValue(option): return "\(option) には値が必要です"
         case let .invalidValue(option, value): return "\(option) の値が不正です: \(value)"
         case .missingCommand:
-            return "コマンドを指定してください: scan / probe / handshake / measure / sync / decode"
+            return "コマンドを指定してください: scan / probe / handshake / measure / sync / decode / discover / impersonate"
         }
     }
 }
@@ -233,6 +253,10 @@ enum CLI {
                 options.nameFilter = try nextValue(for: arg)
             case "--save":
                 options.saveConfig = true
+            case "--reply":
+                options.reply = true
+            case "--local-name":
+                options.localName = try nextValue(for: arg)
             case "--out":
                 options.outputPath = try nextValue(for: arg)
             case "--command":
